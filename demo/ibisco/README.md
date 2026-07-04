@@ -8,8 +8,9 @@ li interroga in sequenza salvandone le risposte.
 
 Rispetto alla demo locale cambiano due cose:
 
-- **avvio** tramite `singularity exec` sulla sandbox `cu122-sm70/` con
-  `LD_LIBRARY_PATH` sui binari in Lustre e `--host 0.0.0.0`;
+- **avvio** tramite `singularity exec` sulla sandbox CUDA (`~/tools/cuda-build/`)
+  con `LD_LIBRARY_PATH` sui binari di llama.cpp (`~/tools/llama.cpp-master/build/bin/`)
+  e `--host 0.0.0.0`;
 - **assegnazione delle GPU**: il nodo ha più GPU e ogni testa va posta su una GPU
   specifica, con due modalità (`manual` / `auto`).
 
@@ -97,8 +98,9 @@ Lo script:
 
 ```bash
 CERBERUS_MODE=auto \
-CERBERUS_SANDBOX=/lustre/home/$USER/cu122-sm70 \
-CERBERUS_BIN=/lustre/home/$USER/llama.cpp-master/build/bin \
+CERBERUS_SANDBOX=$HOME/tools/cuda-build \
+CERBERUS_BIN=$HOME/tools/llama.cpp-master/build/bin \
+CERBERUS_BIND=$HOME/tools \
 HF_HOME=/ibiscostorage/$USER/hf_cache \
 NGL=99 HEALTH_TIMEOUT=300 \
 ./run_demo_ibisco.sh

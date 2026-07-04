@@ -23,10 +23,10 @@
 #
 # Variabili d'ambiente sovrascrivibili:
 #   CERBERUS_MODE     manual | auto                 (default: manual)
-#   CERBERUS_SANDBOX  sandbox CUDA   (default: /lustre/home/$USER/cu122-sm70)
-#   CERBERUS_BIN      dir dei binari (default: /lustre/home/$USER/llama.cpp-master/build/bin)
+#   CERBERUS_SANDBOX  sandbox CUDA   (default: ~/tools/cuda-build)
+#   CERBERUS_BIN      dir dei binari (default: ~/tools/llama.cpp-master/build/bin)
+#   CERBERUS_BIND     dir montata in bind nel container (default: ~/tools)
 #   HF_HOME           root della cache HF           (default: ~/.cache/huggingface)
-#   LUSTRE            radice Lustre da montare in bind (default: /lustre)
 #   NGL               layer in offload su GPU        (default: 99)
 #   HEALTH_TIMEOUT    attesa max avvio server (s)    (default: 300)
 #
@@ -36,11 +36,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- Configurazione ----------------------------------------------------------
 MODE="${CERBERUS_MODE:-manual}"
-SANDBOX="${CERBERUS_SANDBOX:-/lustre/home/$USER/cu122-sm70}"
-BIN="${CERBERUS_BIN:-/lustre/home/$USER/llama.cpp-master/build/bin}"
+SANDBOX="${CERBERUS_SANDBOX:-$HOME/tools/cuda-build}"
+BIN="${CERBERUS_BIN:-$HOME/tools/llama.cpp-master/build/bin}"
 HF_CACHE="${HF_HOME:-$HOME/.cache/huggingface}"
 HF_HUB="$HF_CACHE/hub"
-LUSTRE="${LUSTRE:-/lustre}"
+# Directory (lato host) montata in bind nel container, così i binari e le .so di
+# llama.cpp su disco sono visibili a runtime. Default: la cartella tools/.
+BIND_DIR="${CERBERUS_BIND:-$HOME/tools}"
 MODELS_CONF="$SCRIPT_DIR/models.conf"
 PROMPTS="$SCRIPT_DIR/prompts.txt"
 OUT_DIR="$SCRIPT_DIR/outputs"
@@ -176,7 +178,7 @@ for i in "${!NAMES[@]}"; do
     [ "$tsplit" != "-" ] && srv_args+=(--tensor-split "$tsplit")
 
     "$SINGULARITY" exec --nv \
-        --bind "$LUSTRE":"$LUSTRE" \
+        --bind "$BIND_DIR":"$BIND_DIR" \
         --bind "$HF_CACHE":/hf \
         --env LD_LIBRARY_PATH="$BIN" \
         "$SANDBOX" \
