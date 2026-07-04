@@ -28,6 +28,8 @@
 #   CERBERUS_BIND     dir montata in bind nel container (default: ~/tools)
 #   HF_HOME           root della cache HF           (default: ~/.cache/huggingface)
 #   NGL               layer in offload su GPU        (default: 99)
+#   THREADS           thread di inferenza per server (default: 8)
+#   THREADS_HTTP      thread del server HTTP         (default: 4)
 #   HEALTH_TIMEOUT    attesa max avvio server (s)    (default: 300)
 #
 set -euo pipefail
@@ -51,6 +53,12 @@ HOST="0.0.0.0"          # raggiungibile da altri nodi (rete InfiniBand)
 CLIENT_HOST="127.0.0.1" # il client gira sullo stesso nodo dei server
 NGL="${NGL:-99}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-300}"
+# Limiti di thread per server. Il default di llama-server è "un thread HTTP per
+# core" (es. 103 su un nodo a 104 core): moltiplicato per tre server supera il
+# limite di thread/processi dell'allocazione (EAGAIN, "Resource temporarily
+# unavailable"). Si tengono bassi e configurabili.
+THREADS="${THREADS:-8}"            # thread di inferenza (CPU) per server
+THREADS_HTTP="${THREADS_HTTP:-4}"  # thread del server HTTP per server
 
 mkdir -p "$OUT_DIR" "$LOG_DIR"
 
@@ -174,6 +182,7 @@ for i in "${!NAMES[@]}"; do
         --device "$device"
         --host "$HOST" --port "$port"
         -ngl "$NGL" -c "$ctx" --jinja
+        -t "$THREADS" --threads-http "$THREADS_HTTP"
     )
     [ "$tsplit" != "-" ] && srv_args+=(--tensor-split "$tsplit")
 
