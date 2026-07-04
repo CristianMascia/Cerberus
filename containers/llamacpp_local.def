@@ -1,0 +1,56 @@
+Bootstrap: docker
+From: nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+%post
+    # <<< impostare con il valore della propria GPU (compute_cap senza punto) >>>
+    ARCH=89
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Symlink stub -> libcuda.so.1: il linker risolve i simboli del driver
+    # (cuMem*) in fase di build, quando il driver reale è assente.
+    ln -sf /usr/local/cuda/lib64/stubs/libcuda.so \
+           /usr/local/cuda/lib64/stubs/libcuda.so.1
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake git ccache \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    cd /opt
+    git clone --depth 1 --single-branch https://github.com/ggml-org/llama.cpp.git
+    cd llama.cpp
+
+    # build pulita (evita cache di configurazioni precedenti)
+    rm -rf build
+
+    # In fase di build il driver non è presente (--nv vale solo a runtime):
+    # si linka contro le librerie stub fornite dall'immagine -devel.
+    cmake -B build \
+        -DGGML_CUDA=ON \
+        -DCMAKE_CUDA_ARCHITECTURES=${ARCH} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLLAMA_BUILD_SERVER=ON \
+        -DLLAMA_BUILD_TESTS=OFF \
+        -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs -Wl,-rpath-link,/usr/local/cuda/lib64/stubs" \
+        -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs -Wl,-rpath-link,/usr/local/cuda/lib64/stubs"
+
+    cmake --build build --config Release -j "$(nproc)" --target llama-server llama-cli
+
+    # NIENTE 'cmake --install': installerebbe anche gli examples non compilati.
+    # Copiamo solo i binari prodotti + le librerie condivise necessarie.
+    cp -a build/bin/. /usr/local/bin/
+    find build -name 'lib*.so*' -exec cp -P {} /usr/local/bin/ \; 2>/dev/null || true
+    echo /usr/local/bin > /etc/ld.so.conf.d/llama.conf
+    ldconfig
+
+    # guardia: fallisci la build QUI se il server non c'è, non a runtime
+    command -v llama-server >/dev/null 2>&1 || { echo "ERRORE: llama-server non compilato"; exit 1; }
+
+%environment
+    export PATH=/usr/local/bin:$PATH
+    export LD_LIBRARY_PATH=/usr/local/bin:$LD_LIBRARY_PATH
+    export LC_ALL=C
+
+%runscript
+    exec llama-server "$@"

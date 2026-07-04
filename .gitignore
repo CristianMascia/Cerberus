@@ -1,3 +1,8 @@
+demo/local/outputs/
+demo/local/logs/
+containers/llamacpp_local.sif
+containers/.build-tmp
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
