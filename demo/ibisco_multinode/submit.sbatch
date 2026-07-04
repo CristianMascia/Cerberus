@@ -4,15 +4,17 @@
 #
 # Adattare partizione e tempi alla configurazione di IBiSCo, quindi:
 #   sbatch submit.sbatch
-# oppure, in interattivo:
-#   salloc --nodes=2 --ntasks-per-node=1 --gres=gpu:3 --time=01:00:00
-#   ./run_demo_multinode.sh
+# oppure, in interattivo (lo script va poi eseguito su un nodo di calcolo):
+#   salloc --partition=gpus --nodes=2 --ntasks-per-node=1 --gpus-per-node=3 \
+#          --cpus-per-task=8 --time=02:00:00
 #
 #SBATCH --job-name=cerberus-mn
+#SBATCH --partition=gpus
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:3
-#SBATCH --time=01:00:00
+#SBATCH --gpus-per-node=3
+#SBATCH --cpus-per-task=8
+#SBATCH --time=02:00:00
 #SBATCH --output=logs/slurm-%j.out
 
 set -euo pipefail
