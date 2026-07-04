@@ -19,11 +19,38 @@ Esempio:
 
 import argparse
 import json
+import re
 import time
 import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+
+# Blocco di ragionamento inline dei modelli "thinking" (es. Qwen3): <think>...</think>
+THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+
+
+def split_thinking(content, reasoning):
+    """Separa il ragionamento dalla risposta finale.
+
+    Ritorna la coppia (thinking, answer):
+    - se il server ha già isolato il ragionamento in 'reasoning_content', quello è
+      il thinking e 'content' è la risposta;
+    - altrimenti si estrae un eventuale blocco <think>...</think> dal content;
+    - se il blocco <think> è aperto ma non chiuso (generazione troncata dentro il
+      ragionamento), tutto ciò che segue <think> è thinking e la risposta è vuota.
+    """
+    content = content or ""
+    if reasoning:
+        return reasoning.strip(), content.strip()
+    m = THINK_RE.search(content)
+    if m:
+        thinking = m.group(1).strip()
+        answer = THINK_RE.sub("", content).strip()
+        return thinking, answer
+    if "<think>" in content and "</think>" not in content:
+        return content.split("<think>", 1)[1].strip(), ""
+    return "", content.strip()
 
 
 def parse_models(path):
@@ -74,15 +101,23 @@ def query(host, port, prompt, max_tokens, timeout):
         body = json.loads(resp.read().decode("utf-8"))
     dt = time.perf_counter() - t0
 
-    content = body["choices"][0]["message"]["content"]
+    choice = body["choices"][0]
+    msg = choice.get("message", {})
+    content = msg.get("content") or ""
+    # I modelli "thinking" (es. Qwen3) espongono il ragionamento in un campo
+    # separato; se non lo fanno, può essere inline come <think>...</think>.
+    reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
+    thinking, answer = split_thinking(content, reasoning)
     usage = body.get("usage", {})
     meta = {
         "latency_s": round(dt, 3),
+        # 'length' = generazione troncata perché ha raggiunto max_tokens.
+        "finish_reason": choice.get("finish_reason"),
         "prompt_tokens": usage.get("prompt_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
         "total_tokens": usage.get("total_tokens"),
     }
-    return content, meta
+    return answer, thinking, meta
 
 
 def main():
@@ -115,13 +150,24 @@ def main():
                 "prompt": prompt,
             }
             try:
-                content, meta = query(
+                answer, thinking, meta = query(
                     args.host, port, prompt, model["max_tokens"], args.timeout
                 )
-                entry.update({"response": content, "error": None, **meta})
-                print(f"  [{i}/{len(prompts)}] ok  ({meta['latency_s']}s)")
+                # Thinking e risposta finale sono salvati in campi separati.
+                entry.update(
+                    {"thinking": thinking or None, "response": answer,
+                     "error": None, **meta}
+                )
+                note = ""
+                if thinking:
+                    note += " [thinking separato]"
+                if not answer and thinking:
+                    note += " [risposta vuota: solo thinking]"
+                if meta.get("finish_reason") == "length":
+                    note += " [troncato: raggiunto max_tokens]"
+                print(f"  [{i}/{len(prompts)}] ok  ({meta['latency_s']}s){note}")
             except (urllib.error.URLError, TimeoutError, KeyError, ValueError) as exc:
-                entry.update({"response": None, "error": str(exc)})
+                entry.update({"thinking": None, "response": None, "error": str(exc)})
                 print(f"  [{i}/{len(prompts)}] ERRORE: {exc}")
             results["runs"].append(entry)
         print()
@@ -140,11 +186,17 @@ def main():
         if run["error"]:
             lines.append(f"**Errore:** `{run['error']}`\n")
         else:
+            trunc = " — TRONCATA (max_tokens)" if run.get("finish_reason") == "length" else ""
+            # Sezione thinking separata (solo se presente).
+            if run.get("thinking"):
+                lines.append("**Thinking:**\n")
+                lines.append(f"```\n{run['thinking']}\n```\n")
             lines.append(
                 f"**Risposta** ({run.get('latency_s')}s, "
-                f"{run.get('completion_tokens')} token):\n"
+                f"{run.get('completion_tokens')} token{trunc}):\n"
             )
-            lines.append(f"{run['response']}\n")
+            answer = run.get("response") or ""
+            lines.append(f"{answer}\n" if answer.strip() else "_(risposta vuota)_\n")
         lines.append("---\n")
     md_path.write_text("\n".join(lines), encoding="utf-8")
 
