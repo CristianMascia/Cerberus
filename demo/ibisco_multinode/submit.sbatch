@@ -18,7 +18,11 @@
 #SBATCH --output=logs/slurm-%j.out
 
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# In un job batch SLURM copia questo script in una spool dir ed esegue la copia:
+# BASH_SOURCE punterebbe lì, non alla cartella di sottomissione. Si usa quindi
+# SLURM_SUBMIT_DIR (impostata da SLURM alla dir da cui si è lanciato sbatch) per
+# ritrovare gli script compagni; fallback a BASH_SOURCE per l'esecuzione diretta.
+SCRIPT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # Se la cache HF è su storage dedicato, impostarla qui (vedi guides/llm_download.md):
 # export HF_HOME=/ibiscostorage/$USER/hf_cache
