@@ -1,13 +1,18 @@
 # Cerberus demo — single node (IBiSCo)
 
-Serves **three small models on one node** using the Cerberus tool, then queries
-them through the OpenAI-compatible client. See the full tool guide in
+Serves **a Llama-3.3-70B model (auto-split over 2 GPUs) plus a small model, on one
+node** using the Cerberus tool, then queries them through the OpenAI-compatible
+client. See the full tool guide in
 [../../guides/cerberus_tool.md](../../guides/cerberus_tool.md).
+
+The 70B Q4_K_M (~40 GiB) does not fit on a single 32 GB V100, so AUTO gives it
+**2 GPUs** (tensor-split); the small `qwen-coder` packs onto the third GPU — all on
+one node. (First run downloads ~40 GiB.)
 
 ## Files
 | File | Purpose |
 |------|---------|
-| `models.conf` | declarative spec: 3 models, `gpus_per_node = 3` |
+| `models.conf` | declarative spec: 70B + a small model, `gpus_per_node = 3` |
 | `run_demo.sh` | download → `cerberus up` → client → teardown |
 | `demo_client.py` | queries every model via `client_llamacpp` (thinking separated) |
 | `prompts.txt` | prompts sent to each model |

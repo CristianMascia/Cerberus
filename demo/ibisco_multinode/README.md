@@ -5,16 +5,17 @@ node + GPU placement**, then queries them through the OpenAI-compatible client.
 See the full tool guide in [../../guides/cerberus_tool.md](../../guides/cerberus_tool.md).
 
 ## What makes it multi-node
-`gpus_per_node = 3`. Two models are `MANUAL num_gpus = 2` (tensor-split over two
-whole GPUs), so together they need 4 GPUs > 3 → Cerberus spreads them onto **two
-nodes**; the two small `AUTO` models pack into leftover GPU space. You don't pin
-anything — the tool decides placement. (A 4B model split over 2 GPUs is only
-illustrative; the same path serves models bigger than a single 32 GB V100.)
+`gpus_per_node = 3`. Two **Llama-3.3-70B** instances (~40 GiB each) are `AUTO`: each
+is too big for one 32 GB V100, so the tool auto-splits it over **2 GPUs**. Two of
+them need 4 whole GPUs > 3 per node → Cerberus spreads them onto **two nodes**; the
+small `AUTO` models pack into the leftover GPU on each node. You don't pin anything
+— the tool decides GPU count, node, and split. (The 70B GGUF is downloaded once and
+served as two instances; ~40 GiB total.)
 
 ## Files
 | File | Purpose |
 |------|---------|
-| `models.conf` | 4 models, `gpus_per_node = 3` (forces 2 nodes) |
+| `models.conf` | 2×70B + 2 small, `gpus_per_node = 3` (needs 2 nodes) |
 | `submit.sbatch` | SLURM batch job (2 nodes × 3 GPUs) → runs `run_demo.sh` |
 | `run_demo.sh` | download → `cerberus up` → client → teardown |
 | `demo_client.py` | queries every model via `client_llamacpp` |
