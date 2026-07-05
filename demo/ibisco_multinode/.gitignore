@@ -1,4 +1,5 @@
 outputs/
 logs/
-.runtime.tsv
-.endpoints.tsv
+endpoints.json
+.cerberus/
+__pycache__/

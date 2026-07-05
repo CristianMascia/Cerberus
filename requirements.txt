@@ -1,0 +1,11 @@
+# Cerberus tool — pip dependencies for the "cerberus" conda env (Python 3.11+)
+#
+#   conda create -n cerberus python=3.11 -y
+#   conda activate cerberus
+#   pip install -r requirements.txt
+#
+huggingface_hub>=0.24      # model download (GGUF) into the shared HF cache (cerberus download)
+openai>=1.40               # OpenAI-compatible client (client_llamacpp.py)
+# hf_transfer>=0.1         # optional: faster large-file downloads (set HF_HUB_ENABLE_HF_TRANSFER=1)
+#
+# Note: TOML parsing uses stdlib `tomllib` (Python >= 3.11); no extra dependency.

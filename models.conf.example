@@ -1,0 +1,48 @@
+# Cerberus — declarative model-serving spec (TOML).
+#
+# You declare WHICH models to serve and HOW MUCH they need; Cerberus handles the
+# rest: download, GPU/node placement, launching the llama.cpp servers, and writing
+# an endpoint map that client_llamacpp.py uses to route requests by label.
+#
+# Workflow:
+#   cerberus download            # fetch the exact GGUFs into the shared HF cache
+#   salloc ... / sbatch ...      # you allocate the nodes (Cerberus packs into them)
+#   cerberus up                  # launch servers + write endpoints.json
+#   # ... use client_llamacpp.py from your experiment code ...
+
+# --------------------------------------------------------------------------- #
+[allocation]
+gpus_per_node = 3          # GPUs available per node (32 GB V100 each). Cerberus
+                           # auto-assigns each model to a node+GPU(s) within this budget.
+
+# --------------------------------------------------------------------------- #
+[defaults]                 # applied to every [[model]] unless overridden
+parallel      = 1          # concurrent server slots (llama.cpp --parallel)
+kv_cache_type = "f16"      # f16 | q8_0 | q4_0   (-ctk / -ctv)
+reasoning     = "auto"     # on | off | auto     (--reasoning)
+
+# --------------------------------------------------------------------------- #
+# AUTO: Cerberus computes how many GPUs the model needs from the GGUF + token
+# budget (via vram_estimator, which already accounts for KV-cache, CUDA context,
+# compute buffers and a safety margin), then spreads it over that many GPUs.
+[[model]]
+label             = "qwen-big"
+hf_repo           = "ggml-org/Qwen3-4B-GGUF"
+gguf_file         = "Qwen3-4B-Q4_K_M.gguf"      # exact filename => quantization is explicit
+alloc_mode        = "AUTO"
+max_input_tokens  = 8192
+max_output_tokens = 2048
+reasoning         = "on"
+# reasoning_budget = 2048                        # optional: cap thinking tokens (--reasoning-budget)
+
+# MANUAL: you fix the number of GPUs to tensor-split the model across.
+[[model]]
+label             = "coder"
+hf_repo           = "ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF"
+gguf_file         = "qwen2.5-coder-0.5b-q8_0.gguf"
+alloc_mode        = "MANUAL"
+num_gpus          = 1
+max_input_tokens  = 4096
+max_output_tokens = 512
+parallel          = 4
+reasoning         = "off"

@@ -1,0 +1,12 @@
+# Cerberus tool — conda environment "cerberus".
+#   conda env create -f environment.yml
+#   conda activate cerberus
+name: cerberus
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - huggingface_hub>=0.24
+      - openai>=1.40

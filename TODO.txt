@@ -1,1 +1,11 @@
-Forse conviene prevedere una cartella models nella root anziche utilizzare la cache di hf
+Modificare l estimator in modo che realizzi anche in automatico il file models.conf
+ed anche il file batch.slurm ( il template da usare almeno per avviare i modelli, poi ovviamente devono avviare la roba loro)
+
+--- Stato ---
+Fatto: tool `cerberus` (config TOML, vram/placement automatico, download, deploy via
+srun, endpoints.json) + client_llamacpp (OpenAI SDK) + demo ibisco / ibisco_multinode
+riscritte sul tool. Vedi guides/cerberus_tool.md.
+
+Da fare (rinviato): emissione automatica del submit.sbatch (nodi/GPU calcolati da
+models.conf). Per ora `cerberus validate` stampa il numero di nodi da allocare e
+l'utente scrive/lancia l'allocazione.

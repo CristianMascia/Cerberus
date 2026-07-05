@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cerberus-llm"
+version = "0.1.0"
+description = "Declarative multi-model llama.cpp serving on the IBiSCo HPC cluster"
+requires-python = ">=3.11"
+dependencies = [
+    "huggingface_hub>=0.24",
+    "openai>=1.40",
+]
+
+[project.scripts]
+cerberus = "cerberus.cli:main"
+
+[tool.setuptools]
+packages = ["cerberus"]
+py-modules = ["client_llamacpp"]
+
+[tool.setuptools.package-data]
+cerberus = ["node_launch.sh"]
