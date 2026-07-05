@@ -3,7 +3,7 @@
 Questa guida descrive come **utilizzare** `llama.cpp` una volta disponibile
 l'immagine (in locale) o la sandbox (su IBiSCo). La procedura di build non è
 qui trattata: per la costruzione dell'immagine `.sif` e della sandbox CUDA si
-rimanda a [llamacpp_install.md](llamacpp_install.md).
+rimanda a [installazione_container.md](installazione_container.md).
 
 L'utilizzo si articola in due momenti distinti:
 
@@ -21,7 +21,7 @@ La guida è articolata in due parti:
   compilati su Lustre (Parte 2 della guida di installazione).
 
 Il presupposto comune è che il modello GGUF da servire sia già stato scaricato
-secondo quanto descritto in [llm_download.md](llm_download.md).
+secondo quanto descritto in [download_modelli.md](download_modelli.md).
 
 ---
 

@@ -40,7 +40,7 @@ def download_models(config: Config, token: str | None = None) -> dict[str, list[
     except ModuleNotFoundError as exc:  # pragma: no cover
         raise RuntimeError(
             "huggingface_hub is required for 'cerberus download' "
-            "(pip install -r requirements.txt in the cerberus env)"
+            "(pip install -e . in the cerberus env)"
         ) from exc
 
     token = token or os.environ.get("HF_TOKEN")

@@ -1,10 +1,10 @@
 # Cerberus — eseguire le demo
 
 Due demo pronte mostrano Cerberus all'opera su IBiSCo, dalla configurazione fino
-alle risposte dei modelli. Stanno in `demo/ibisco/` (singolo nodo) e
-`demo/ibisco_multinode/` (due nodi). Prima di iniziare, leggi la
-[panoramica](cerberus_panoramica.md); per costruire un tuo progetto vedi la
-[guida al progetto](cerberus_progetto.md).
+alle risposte dei modelli. Stanno in `test/demo/ibisco/` (singolo nodo) e
+`test/demo/ibisco_multinode/` (due nodi). Prima di iniziare, leggi la
+[panoramica](panoramica.md); per costruire un tuo progetto vedi la
+[guida al progetto](progetto.md).
 
 ---
 
@@ -18,7 +18,7 @@ source /nfsexports/SOFTWARE/anaconda3.OK/setupconda.sh
 conda create -n cerberus python=3.11 -y
 conda activate cerberus
 
-# installazione del tool (comando `cerberus` + client_llamacpp + dipendenze)
+# installazione del tool (comando `cerberus` + cerberus.client + dipendenze)
 cd ~/tools/Cerberus
 pip install -e .
 
@@ -28,12 +28,12 @@ export HF_TOKEN=hf_...
 
 Devono esistere la **sandbox CUDA** (`~/tools/cuda-build`) e i **binari** di
 `llama.cpp` (`~/tools/llama.cpp-master/build/bin`) — vedi
-[llamacpp_install.md](llamacpp_install.md). Se sono altrove, esporta
+[installazione_container.md](installazione_container.md). Se sono altrove, esporta
 `CERBERUS_SANDBOX` / `CERBERUS_BIN`.
 
 ---
 
-## Demo 1 — singolo nodo (`demo/ibisco`)
+## Demo 1 — singolo nodo (`test/demo/ibisco`)
 
 ### In cosa consiste
 Serve **due modelli su un solo nodo**:
@@ -51,12 +51,12 @@ modello grande e che un modello piccolo condivide il nodo.
 |------|-------|
 | `models.conf` | i due modelli, `gpus_per_node = 3` |
 | `run_demo.sh` | fa tutto: `download` → `up` (in background) → client → teardown |
-| `demo_client.py` | interroga ogni modello via `client_llamacpp`, salva le risposte |
+| `demo_client.py` | interroga ogni modello via `cerberus.client`, salva le risposte |
 | `prompts.txt` | i prompt inviati |
 
 ### Esecuzione
 ```bash
-cd ~/tools/Cerberus/demo/ibisco
+cd ~/tools/Cerberus/test/demo/ibisco
 
 # 1) (facoltativo) verifica quante risorse servono
 cerberus validate            # → "needs 3 GPU(s) -> 1 node(s)"
@@ -77,7 +77,7 @@ poi arresta tutto. Le risposte finiscono in `outputs/responses_<timestamp>.md` (
 
 ---
 
-## Demo 2 — multi nodo (`demo/ibisco_multinode`)
+## Demo 2 — multi nodo (`test/demo/ibisco_multinode`)
 
 ### In cosa consiste
 Serve **quattro modelli distribuiti su due nodi**, con posizionamento automatico:
@@ -100,7 +100,7 @@ batch.
 
 ### Esecuzione — interattiva
 ```bash
-cd ~/tools/Cerberus/demo/ibisco_multinode
+cd ~/tools/Cerberus/test/demo/ibisco_multinode
 cerberus validate            # → "needs 6 GPU(s) -> 2 node(s)"
 cerberus download            # il 70B è scaricato una sola volta
 

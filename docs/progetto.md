@@ -5,8 +5,8 @@ che usa uno o più modelli serviti da Cerberus. Copre tutto il ciclo: struttura 
 progetto, scrittura di `models.conf`, allocazione delle risorse, avvio dei modelli
 e **integrazione del client `llama.cpp` nel tuo codice**.
 
-Prerequisiti concettuali: [panoramica](cerberus_panoramica.md). Per vedere esempi
-funzionanti: [esecuzione delle demo](cerberus_esecuzione_demo.md).
+Prerequisiti concettuali: [panoramica](panoramica.md). Per vedere esempi
+funzionanti: [esecuzione delle demo](demo.md).
 
 ---
 
@@ -19,7 +19,7 @@ l'isolamento tra esperimenti concorrenti è **per cartella**.
 ```
 mio-progetto/
 ├── models.conf          # quali modelli servire (lo scrivi tu)
-├── experiment.py        # il tuo codice, usa client_llamacpp
+├── experiment.py        # il tuo codice, usa cerberus.client
 ├── run.sbatch           # (opzionale) job che avvia i modelli ed esegue l'esperimento
 ├── prompts/ dati/ …     # i tuoi input
 ├── outputs/             # i tuoi risultati
@@ -44,11 +44,11 @@ Sul **login node**:
 source /nfsexports/SOFTWARE/anaconda3.OK/setupconda.sh
 conda create -n cerberus python=3.11 -y
 conda activate cerberus
-cd ~/tools/Cerberus && pip install -e .     # comando `cerberus` + modulo client_llamacpp
+cd ~/tools/Cerberus && pip install -e .     # comando `cerberus` + modulo cerberus.client
 export HF_TOKEN=hf_...                       # nel ~/.bashrc, se possibile
 ```
 
-Dopo `pip install -e .`, dal tuo codice funziona `from client_llamacpp import
+Dopo `pip install -e .`, dal tuo codice funziona `from cerberus import
 CerberusClient` in qualsiasi cartella (il modulo è installato nell'env).
 
 ---
@@ -90,7 +90,7 @@ max_output_tokens = 1024
 - **`hf_repo` + `gguf_file`**: `hf_repo` è `org/repo` (NON il nome del file);
   `gguf_file` è il nome esatto del `.gguf` in quel repo. Per trovarlo, apri la
   scheda *Files* del modello su Hugging Face, oppure usa lo stimatore:
-  `python vram_estimator/gguf_vram.py <org/repo> -q Q4_K_M`. Per i GGUF **spezzati**
+  `python cerberus/estimator/gguf_vram.py <org/repo> -q Q4_K_M`. Per i GGUF **spezzati**
   indica la prima parte (`…-00001-of-000NN.gguf`): Cerberus scarica tutte le parti.
 - **`max_input_tokens` / `max_output_tokens`**: la finestra che vuoi garantire per
   richiesta. Determina `--ctx-size = (in+out)·parallel` e quindi la VRAM della
@@ -199,12 +199,12 @@ sbatch run.sbatch
 
 ## 6. Integrare il client nel tuo codice
 
-Il modulo è `client_llamacpp` (installato con `pip install -e .`). Tutto passa per
+Il modulo è `cerberus.client` (installato con `pip install -e .`). Tutto passa per
 la classe `CerberusClient`.
 
 ### Le basi
 ```python
-from client_llamacpp import CerberusClient
+from cerberus import CerberusClient
 
 # Legge endpoints.json: da CERBERUS_ENDPOINTS, oppure da project_dir/endpoints.json,
 # oppure da ./endpoints.json. Se il tuo script gira nella cartella del progetto,
@@ -282,7 +282,7 @@ Una chiamata `chat()` senza mappa solleva `CerberusUnavailable`.
 #!/usr/bin/env python3
 import json, time
 from pathlib import Path
-from client_llamacpp import CerberusClient
+from cerberus import CerberusClient
 
 HERE = Path(__file__).resolve().parent
 PROMPTS = ["Cos'è un GGUF?", "Scrivi una funzione fattoriale in Python.",
@@ -334,7 +334,7 @@ python altrove/experiment.py
 o in Python: `CerberusClient(project_dir="/path/mio-progetto")`.
 
 Per usare i modelli **dal tuo portatile** via tunnel SSH (interfaccia web/API),
-vedi §2.4 di [llamacpp_usage.md](llamacpp_usage.md).
+vedi §2.4 di [uso_llamacpp.md](uso_llamacpp.md).
 
 ---
 
@@ -391,7 +391,7 @@ python experiment.py                         # usa CerberusClient
 
 ## 11. Errori frequenti (rimando)
 La tabella completa di diagnosi è in
-[esecuzione delle demo](cerberus_esecuzione_demo.md#errori-tipici-e-come-risolverli):
+[esecuzione delle demo](demo.md#errori-tipici-e-come-risolverli):
 in sintesi — non avvolgere `up` in `srun`; alloca i nodi indicati da `validate`;
 esegui `download`/`up` dove c'è rete; per il thinking lascia budget di token; se
 `srun` si lamenta delle GPU usa `CERBERUS_SRUN_GRES="--gres=gpu:N"`.

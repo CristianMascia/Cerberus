@@ -2,7 +2,7 @@
 
 Serves **4 models across 2 nodes** using the Cerberus tool, with **automatic
 node + GPU placement**, then queries them through the OpenAI-compatible client.
-See the full tool guide in [../../guides/cerberus_tool.md](../../guides/cerberus_tool.md).
+See the full tool guide in [../../../docs/demo.md](../../../docs/demo.md).
 
 ## What makes it multi-node
 `gpus_per_node = 3`. Two **Llama-3.3-70B** instances (~40 GiB each) are `AUTO`: each
@@ -18,7 +18,7 @@ served as two instances; ~40 GiB total.)
 | `models.conf` | 2×70B + 2 small, `gpus_per_node = 3` (needs 2 nodes) |
 | `submit.sbatch` | SLURM batch job (2 nodes × 3 GPUs) → runs `run_demo.sh` |
 | `run_demo.sh` | download → `cerberus up` → client → teardown |
-| `demo_client.py` | queries every model via `client_llamacpp` |
+| `demo_client.py` | queries every model via il client `cerberus` |
 | `prompts.txt` | prompts |
 
 ## Run

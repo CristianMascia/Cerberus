@@ -2,7 +2,7 @@
 
 Questa guida descrive la procedura per scaricare modelli da Hugging Face sul
 cluster **IBiSCo**, propedeutica al serving tramite `llama.cpp` (si veda
-[llama.cpp_local_img.md](llama.cpp_local_img.md)).
+[uso_llamacpp.md](uso_llamacpp.md)).
 
 È già stato predisposto sul cluster un ambiente conda dedicato, `hf_download`,
 configurato con una API key di Hugging Face che consente il download.
@@ -52,7 +52,7 @@ I comandi di download di questa guida **non** specificano `--local-dir`: in
 sua assenza `hf download` salva i file nella cache standard di Hugging Face
 (`$HF_HOME/hub`, o `~/.cache/huggingface/hub` se `HF_HOME` non è impostata),
 nella struttura `models--<org>--<repo>/snapshots/<hash>/...`. È il percorso
-che [llama.cpp_local_img.md](llama.cpp_local_img.md#14-serving-di-un-modello)
+che [uso_llamacpp.md](uso_llamacpp.md#14-serving-di-un-modello)
 si aspetta per il bind mount in fase di serving (`-B $HOME/.cache/huggingface:/hf`).
 
 Poiché la home su IBiSCo ha quota limitata, si consiglia di reindirizzare la

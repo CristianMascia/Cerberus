@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Cerberus demo client — queries every deployed model via the Cerberus client.
+Client condiviso delle demo — interroga ogni modello servito da Cerberus.
 
-Reads the endpoint map that `cerberus up` wrote in this directory (endpoints.json),
-sends each prompt in prompts.txt to every model in sequence, and saves the answers
-(thinking separated from the final answer) to outputs/.
+Legge la mappa `endpoints.json` scritta da `cerberus up` nella cartella CORRENTE
+(quella della demo da cui lo lanci), invia ogni prompt di `prompts.txt` a tutti i
+modelli in sequenza e salva le risposte (thinking separato dalla risposta finale)
+in `outputs/`.
+
+Uso (dalla cartella di una demo):  python ../demo_client.py
 """
 
 import json
@@ -13,10 +16,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-# make the repo-root client_llamacpp importable without installing
-sys.path.insert(0, str(HERE.parents[1]))
-from client_llamacpp import CerberusClient  # noqa: E402
+from cerberus import CerberusClient   # installato con `pip install -e .`
+
+CWD = Path.cwd()
 
 
 def read_prompts(path: Path) -> list[str]:
@@ -29,18 +31,18 @@ def read_prompts(path: Path) -> list[str]:
 
 
 def main():
-    c = CerberusClient(project_dir=str(HERE))
+    c = CerberusClient(project_dir=str(CWD))
     if not c.is_available():
-        sys.exit("no endpoints.json here — run 'cerberus up' first (in this dir).")
+        sys.exit("nessun endpoints.json qui — esegui prima 'cerberus up' in questa cartella.")
 
-    prompts = read_prompts(HERE / "prompts.txt")
-    out_dir = HERE / "outputs"
+    prompts = read_prompts(CWD / "prompts.txt")
+    out_dir = CWD / "outputs"
     out_dir.mkdir(exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     runs = []
 
     models = c.list_models()
-    print(f"[demo] {len(models)} model(s) x {len(prompts)} prompt(s)\n")
+    print(f"[demo] {len(models)} modello/i x {len(prompts)} prompt\n")
     for label in models:
         print(f"=== {label} ({c.endpoint(label)['base_url']}) ===")
         for i, prompt in enumerate(prompts, 1):
@@ -55,7 +57,7 @@ def main():
                 print(f"  [{i}/{len(prompts)}] ok ({dt}s){note}")
             except Exception as exc:  # noqa: BLE001
                 entry.update({"thinking": None, "response": None, "error": str(exc)})
-                print(f"  [{i}/{len(prompts)}] ERROR: {exc}")
+                print(f"  [{i}/{len(prompts)}] ERRORE: {exc}")
             runs.append(entry)
         print()
 
@@ -76,7 +78,7 @@ def main():
             md.append((r["response"] or "_(vuota)_") + "\n")
         md.append("---\n")
     (out_dir / f"responses_{ts}.md").write_text("\n".join(md))
-    print(f"[demo] saved outputs/responses_{ts}.json / .md")
+    print(f"[demo] salvato outputs/responses_{ts}.json / .md")
 
 
 if __name__ == "__main__":

@@ -6,8 +6,8 @@ cache di Hugging Face montata in **bind**, e li interroga in sequenza con uno
 script Python che ne salva le risposte.
 
 Tutto in **locale**, tramite l'immagine Singularity di `llama.cpp`
-(vedi [../guides/llamacpp_install.md](../guides/llamacpp_install.md) e
-[../guides/llamacpp_usage.md](../guides/llamacpp_usage.md)).
+(vedi [../../../docs/installazione_container.md](../../../docs/installazione_container.md) e
+[../../../docs/uso_llamacpp.md](../../../docs/uso_llamacpp.md)).
 
 ## Contenuto
 

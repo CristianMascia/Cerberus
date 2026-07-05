@@ -16,7 +16,7 @@ separately in `reasoning`. A `<think>...</think>` fallback covers other cases.
 
 Example
 -------
-    from client_llamacpp import CerberusClient
+    from cerberus import CerberusClient
     c = CerberusClient()
     r = c.chat("qwen-big", [{"role": "user", "content": "Ciao"}], reasoning=False)
     print(r.content)      # clean answer

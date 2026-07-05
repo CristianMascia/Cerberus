@@ -1,12 +1,10 @@
-# Cerberus tool — conda environment "cerberus".
+# Cerberus — ambiente conda "cerberus".
 #   conda env create -f environment.yml
 #   conda activate cerberus
+#   pip install -e .          # installa il comando `cerberus` e le dipendenze (da pyproject.toml)
 name: cerberus
 channels:
   - conda-forge
 dependencies:
   - python=3.11
   - pip
-  - pip:
-      - huggingface_hub>=0.24
-      - openai>=1.40

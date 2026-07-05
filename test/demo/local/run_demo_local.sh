@@ -9,12 +9,12 @@
 # i server.
 #
 # Prerequisiti:
-#   - immagine Singularity locale di llama.cpp (vedi guides/llamacpp_install.md);
-#   - modelli GGUF già presenti nella cache HF (vedi guides/llm_download.md);
+#   - immagine Singularity locale di llama.cpp (vedi docs/installazione_container.md);
+#   - modelli GGUF già presenti nella cache HF (vedi docs/download_modelli.md);
 #   - i modelli, le porte e i prompt sono configurati in models.conf e prompts.txt.
 #
 # Variabili d'ambiente sovrascrivibili:
-#   CERBERUS_IMAGE   percorso dell'immagine .sif (default: ../../containers/llamacpp_local.sif)
+#   CERBERUS_IMAGE   percorso dell'immagine .sif (default: <repo>/cerberus/containers/llamacpp_local.sif)
 #   HF_HOME          root della cache HF        (default: ~/.cache/huggingface)
 #   NGL              layer in offload su GPU     (default: 99)
 #   HEALTH_TIMEOUT   attesa max avvio server (s) (default: 180)
@@ -24,7 +24,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- Configurazione ----------------------------------------------------------
-IMAGE="${CERBERUS_IMAGE:-$SCRIPT_DIR/../../containers/llamacpp_local.sif}"
+IMAGE="${CERBERUS_IMAGE:-$SCRIPT_DIR/../../../cerberus/containers/llamacpp_local.sif}"
 HF_CACHE="${HF_HOME:-$HOME/.cache/huggingface}"
 HF_HUB="$HF_CACHE/hub"
 MODELS_CONF="$SCRIPT_DIR/models.conf"
@@ -59,7 +59,7 @@ command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1 \
 SINGULARITY="$(command -v singularity || command -v apptainer)"
 
 [ -f "$IMAGE" ] || die "immagine non trovata: $IMAGE
-       Costruirla secondo guides/llamacpp_install.md, oppure impostare CERBERUS_IMAGE."
+       Costruirla secondo docs/installazione_container.md, oppure impostare CERBERUS_IMAGE."
 [ -d "$HF_HUB" ] || die "cache HF non trovata: $HF_HUB"
 [ -f "$MODELS_CONF" ] || die "manca $MODELS_CONF"
 [ -f "$PROMPTS" ] || die "manca $PROMPTS"
@@ -89,7 +89,7 @@ while IFS= read -r raw; do
     host_path="$(resolve_gguf "$repo" "$glob")"
     if [ -z "$host_path" ]; then
         die "GGUF non trovato per '$name' (repo=$repo glob=$glob).
-       Verificare che il file sia in cache; se serve scaricarlo vedi guides/llm_download.md."
+       Verificare che il file sia in cache; se serve scaricarlo vedi docs/download_modelli.md."
     fi
     # Percorso all'interno del container: la cache è montata su /hf.
     rel="${host_path#"$HF_CACHE"/}"

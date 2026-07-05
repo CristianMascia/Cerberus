@@ -5,7 +5,7 @@
 # Scarica dalla cache di Hugging Face i tre modelli usati dalla demo, nella sola
 # quantizzazione lanciata (i pattern sono letti direttamente da models.conf, così
 # restano allineati alla demo). I file finiscono nella cache HF standard, pronti
-# per run_demo_local.sh; nessun --local-dir (vedi guides/llm_download.md).
+# per run_demo_local.sh; nessun --local-dir (vedi docs/download_modelli.md).
 #
 # Variabili d'ambiente:
 #   HF_HOME   root della cache HF (default: ~/.cache/huggingface)

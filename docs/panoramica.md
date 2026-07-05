@@ -13,9 +13,9 @@ modelli vuole e *quanto* occupano; Cerberus si occupa di tutto il resto:
   richieste al modello giusto, **per etichetta (label)**, tramite l'API
   **compatibile con OpenAI** (`/v1/chat/completions`).
 
-Guide collegate: [esecuzione delle demo](cerberus_esecuzione_demo.md) ·
-[realizzare un progetto](cerberus_progetto.md) ·
-[installazione immagine/sandbox](llamacpp_install.md).
+Guide collegate: [esecuzione delle demo](demo.md) ·
+[realizzare un progetto](progetto.md) ·
+[installazione immagine/sandbox](installazione_container.md).
 
 ---
 
@@ -42,7 +42,7 @@ Guide collegate: [esecuzione delle demo](cerberus_esecuzione_demo.md) ·
  └──────────────────────────────────────────────────────────┘
       │
       ▼
- endpoints.json  ──►  client_llamacpp.py  ──►  il tuo codice di esperimenti
+ endpoints.json  ──►  cerberus.client.py  ──►  il tuo codice di esperimenti
    (label → host:port)     (CerberusClient)      (chat per label)
 ```
 
@@ -109,7 +109,7 @@ KV-cache viene preallocata a questa dimensione: valori più alti = più VRAM.
 
 ## 3. AUTO vs MANUAL: quante GPU
 
-### AUTO — deciso dal `vram_estimator`
+### AUTO — deciso dal `cerberus.estimator`
 Cerberus stima la VRAM del modello leggendo l'**header del GGUF** (via richieste
 HTTP Range, senza scaricare il file) e calcolando:
 
@@ -180,7 +180,7 @@ sempre l'eventuale ragionamento in `message.reasoning_content`.
 > **Perché la sandbox.** Su IBiSCo non si può costruire un'immagine `.sif` (serve
 > root/`--fakeroot`), e i binari di `llama.cpp` sono compilati a parte per sm_70 su
 > Lustre. La sandbox fornisce l'ambiente CUDA/glibc giusto; i binari stanno fuori
-> (`LD_LIBRARY_PATH`). Vedi [llamacpp_install.md](llamacpp_install.md).
+> (`LD_LIBRARY_PATH`). Vedi [installazione_container.md](installazione_container.md).
 
 ---
 
@@ -212,7 +212,7 @@ premi `Ctrl-C` (che li arresta). Il client legge questa mappa per instradare.
 Unico punto d'accesso a tutti i modelli, per label, via API OpenAI:
 
 ```python
-from client_llamacpp import CerberusClient
+from cerberus import CerberusClient
 c = CerberusClient()                       # legge ./endpoints.json (o $CERBERUS_ENDPOINTS)
 r = c.chat("qwen-big", [{"role": "user", "content": "Ciao"}], reasoning=False)
 r.content      # risposta pulita (mai <think>)
@@ -222,7 +222,7 @@ r.reasoning    # traccia di ragionamento, o None
 Il client separa il *thinking* dalla risposta (nativo via `reasoning_content`, con
 fallback su `<think>…</think>`), ed è **sicuro fuori dal cluster**: importarlo e
 costruirlo non tocca file né rete; senza mappa `is_available()` è `False`. Dettagli
-d'uso nella [guida al progetto](cerberus_progetto.md).
+d'uso nella [guida al progetto](progetto.md).
 
 ---
 
