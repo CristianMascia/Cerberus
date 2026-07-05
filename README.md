@@ -61,7 +61,7 @@ Componenti principali (tutti dentro il package `cerberus/`):
 | Percorso | Contenuto |
 |----------|-----------|
 | `cerberus/` | il tool e **tutti** i suoi componenti in un unico posto |
-| `cerberus/estimator/` | stimatore VRAM/GGUF (`gguf_vram.py`) + GUI desktop opzionali |
+| `cerberus/estimator.py` | stimatore VRAM/GGUF (header GGUF via HTTP, no download) |
 | `cerberus/containers/` | ricette Singularity per costruire immagine/sandbox |
 | `cerberus/node_launch.sh` | launcher per-nodo (eseguito via `srun`) |
 | `test/demo/` | demo eseguibili: `ibisco` (1 nodo), `ibisco_multinode` (2 nodi), `local` (immagine locale) |

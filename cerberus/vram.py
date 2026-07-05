@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 
 from .config import ModelSpec
-from .estimator import gguf_vram
+from . import estimator as gguf_vram
 
 
 def _gv():

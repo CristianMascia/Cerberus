@@ -90,7 +90,7 @@ max_output_tokens = 1024
 - **`hf_repo` + `gguf_file`**: `hf_repo` è `org/repo` (NON il nome del file);
   `gguf_file` è il nome esatto del `.gguf` in quel repo. Per trovarlo, apri la
   scheda *Files* del modello su Hugging Face, oppure usa lo stimatore:
-  `python cerberus/estimator/gguf_vram.py <org/repo> -q Q4_K_M`. Per i GGUF **spezzati**
+  `python -m cerberus.estimator <org/repo> -q Q4_K_M`. Per i GGUF **spezzati**
   indica la prima parte (`…-00001-of-000NN.gguf`): Cerberus scarica tutte le parti.
 - **`max_input_tokens` / `max_output_tokens`**: la finestra che vuoi garantire per
   richiesta. Determina `--ctx-size = (in+out)·parallel` e quindi la VRAM della
