@@ -1,4 +1,9 @@
-# Cerberus — guida al tool
+# Cerberus — guida al tool (quickstart)
+
+> Questa è una guida rapida. Per gli approfondimenti vedi:
+> [panoramica](cerberus_panoramica.md) · [eseguire le demo](cerberus_esecuzione_demo.md) ·
+> [realizzare un progetto](cerberus_progetto.md).
+
 
 Cerberus serve uno o più modelli LLM con `llama.cpp` su IBiSCo a partire da **un
 solo file dichiarativo** (`models.conf`, in TOML). Il tool si occupa di: download

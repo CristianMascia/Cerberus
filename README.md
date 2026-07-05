@@ -33,7 +33,7 @@ print(c.chat("qwen-big", [{"role":"user","content":"Ciao"}]).content)
 | `client_llamacpp.py` | OpenAI-compatible client (routes by label, separates reasoning) |
 | `vram_estimator/` | GGUF header parser + KV/VRAM estimator (used by placement) |
 | `models.conf.example` | annotated config example |
-| `guides/` | install, download, usage, and the **cerberus tool** guide |
+| `guides/` | guide dettagliate: [panoramica](guides/cerberus_panoramica.md), [demo](guides/cerberus_esecuzione_demo.md), [progetto](guides/cerberus_progetto.md); + install/download/usage di llama.cpp |
 | `containers/` | Singularity image / sandbox build recipes |
 | `demo/` | worked examples: `ibisco` (single node), `ibisco_multinode` (2 nodes) |
 
