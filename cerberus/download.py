@@ -68,5 +68,6 @@ def resolve_local_gguf(spec: ModelSpec, hf_cache: str | Path) -> Path | None:
     for snap in snapshots.iterdir():
         cand = snap / spec.gguf_file
         if cand.exists():
-            return cand.resolve()
+            #return cand.resolve()
+            return cand
     return None
