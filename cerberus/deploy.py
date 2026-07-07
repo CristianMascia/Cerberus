@@ -111,10 +111,11 @@ def up(config: Config, project_dir: Path, token: str | None = None) -> Path:
                 )
             container = _container_path(host_gguf, st["hf_cache"])
             rb = p.spec.reasoning_budget if p.spec.reasoning_budget is not None else ""
-            # columns: node, label, gguf_container, device, ctx, parallel, kv, reasoning, reasoning_budget
+            # columns: node, label, gguf_container, device, ctx, parallel, kv, reasoning, reasoning_format, reasoning_budget
             fh.write("\t".join(str(x) for x in [
                 p.node_idx, p.spec.label, container, p.device_arg, p.spec.ctx_size,
-                p.spec.parallel, p.spec.kv_cache_type, p.spec.reasoning, rb,
+                p.spec.parallel, p.spec.kv_cache_type, p.spec.reasoning,
+                p.spec.reasoning_format, rb,
             ]) + "\n")
 
     # export settings for node_launch (srun propagates the environment)

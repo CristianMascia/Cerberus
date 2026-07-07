@@ -61,7 +61,7 @@ PY
 }
 
 started=0
-while IFS=$'\t' read -r node label container device ctx parallel kv reasoning rbudget; do
+while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget; do
     [ "$node" = "$NODE_IDX" ] || continue
 
     port="$(free_port)" || { log "no free port for $label"; continue; }
@@ -70,7 +70,7 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning rb
           -ngl "$NGL" --fit off
           -c "$ctx" -np "$parallel"
           -ctk "$kv" -ctv "$kv" --jinja
-          --reasoning-format deepseek --reasoning "$reasoning"
+          --reasoning-format "${reasoning_format:-deepseek}" --reasoning "$reasoning"
           --host 0.0.0.0 --port "$port"
           -t "$THREADS" --threads-http "$THREADS_HTTP" )
     [ -n "$rbudget" ] && srv+=( --reasoning-budget "$rbudget" )

@@ -22,6 +22,11 @@ except ModuleNotFoundError:  # pragma: no cover
 ALLOC_MODES = ("AUTO", "MANUAL")
 KV_CACHE_TYPES = ("f16", "q8_0", "q4_0")
 REASONING_MODES = ("on", "off", "auto")
+# llama.cpp --reasoning-format: how the server separates thinking from the answer.
+# 'deepseek' (default) parses <think>…</think>; 'auto' lets llama.cpp pick per model
+# (needed for harmony models like gpt-oss, whose channels 'deepseek' does not parse);
+# 'none' leaves the raw output in content for the client to parse.
+REASONING_FORMATS = ("deepseek", "deepseek-legacy", "auto", "none")
 
 
 class ConfigError(Exception):
@@ -39,6 +44,7 @@ class ModelSpec:
     parallel: int = 1
     kv_cache_type: str = "f16"
     reasoning: str = "auto"         # on | off | auto
+    reasoning_format: str = "deepseek"  # llama.cpp --reasoning-format (see REASONING_FORMATS)
     reasoning_budget: Optional[int] = None
     num_gpus: Optional[int] = None  # required for MANUAL, ignored for AUTO
 
@@ -106,6 +112,12 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
     if reasoning not in REASONING_MODES:
         raise ConfigError(f"{where}: reasoning must be one of {REASONING_MODES}")
 
+    reasoning_format = str(
+        t.get("reasoning_format", defaults.get("reasoning_format", "deepseek"))
+    )
+    if reasoning_format not in REASONING_FORMATS:
+        raise ConfigError(f"{where}: reasoning_format must be one of {REASONING_FORMATS}")
+
     reasoning_budget = t.get("reasoning_budget")
     if reasoning_budget is not None and (not isinstance(reasoning_budget, int)
                                          or isinstance(reasoning_budget, bool)):
@@ -124,8 +136,8 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
     return ModelSpec(
         label=label, hf_repo=hf_repo, gguf_file=gguf_file, alloc_mode=alloc_mode,
         max_input_tokens=max_in, max_output_tokens=max_out, parallel=parallel,
-        kv_cache_type=kv, reasoning=reasoning, reasoning_budget=reasoning_budget,
-        num_gpus=num_gpus,
+        kv_cache_type=kv, reasoning=reasoning, reasoning_format=reasoning_format,
+        reasoning_budget=reasoning_budget, num_gpus=num_gpus,
     )
 
 
