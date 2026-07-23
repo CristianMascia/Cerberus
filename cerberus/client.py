@@ -25,6 +25,7 @@ Example
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -41,13 +42,15 @@ class CerberusUnavailable(RuntimeError):
 
 @dataclass
 class Response:
-    content: str                 # clean final answer (never contains <think>)
-    reasoning: Optional[str]     # reasoning trace, or None
+    content: str  # clean final answer (never contains <think>)
+    reasoning: Optional[str]  # reasoning trace, or None
     finish_reason: Optional[str]
-    raw: Any                     # full SDK response object
+    raw: Any  # full SDK response object
 
 
-def _split_thinking(content: str, reasoning: Optional[str]) -> tuple[Optional[str], str]:
+def _split_thinking(
+    content: str, reasoning: Optional[str]
+) -> tuple[Optional[str], str]:
     content = content or ""
     if reasoning:
         return reasoning.strip() or None, content.strip()
@@ -60,12 +63,14 @@ def _split_thinking(content: str, reasoning: Optional[str]) -> tuple[Optional[st
 
 
 class CerberusClient:
-    def __init__(self, endpoints_path: Optional[str] = None,
-                 project_dir: Optional[str] = None):
+    def __init__(
+        self, endpoints_path: Optional[str] = None, project_dir: Optional[str] = None
+    ):
         self._explicit = endpoints_path
         self._project_dir = project_dir
         self._map: Optional[dict] = None
         self._sdk_clients: dict[str, Any] = {}
+        self._async_sdk_clients: dict[str, Any] = {}
 
     # --- endpoint map (lazy) ------------------------------------------------ #
     def _map_path(self) -> Path:
@@ -110,15 +115,39 @@ class CerberusClient:
             try:
                 from openai import OpenAI
             except ModuleNotFoundError as exc:  # pragma: no cover
-                raise RuntimeError("the 'openai' package is required (pip install openai)") from exc
-            self._sdk_clients[label] = OpenAI(base_url=self.endpoint(label)["base_url"],
-                                              api_key="cerberus-no-auth")
+                raise RuntimeError(
+                    "the 'openai' package is required (pip install openai)"
+                ) from exc
+            self._sdk_clients[label] = OpenAI(
+                base_url=self.endpoint(label)["base_url"], api_key="cerberus-no-auth"
+            )
         return self._sdk_clients[label]
 
+    def _async_sdk(self, label: str):
+        if label not in self._async_sdk_clients:
+            try:
+                from openai import AsyncOpenAI
+            except ModuleNotFoundError as exc:  # pragma: no cover
+                raise RuntimeError(
+                    "the 'openai' package is required (pip install openai)"
+                ) from exc
+            self._async_sdk_clients[label] = AsyncOpenAI(
+                base_url=self.endpoint(label)["base_url"], api_key="cerberus-no-auth"
+            )
+        return self._async_sdk_clients[label]
+
     # --- inference ---------------------------------------------------------- #
-    def chat(self, label: str, messages: list[dict], *, reasoning: Optional[bool] = None,
-             max_tokens: Optional[int] = None, temperature: float = 0.7,
-             stream: bool = False, **extra) -> Response:
+    def chat(
+        self,
+        label: str,
+        messages: list[dict],
+        *,
+        reasoning: Optional[bool] = None,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.7,
+        stream: bool = False,
+        **extra,
+    ) -> Response:
         """Send a chat request to the model `label`.
 
         reasoning: None = leave the server default; True/False = best-effort ask the
@@ -127,12 +156,18 @@ class CerberusClient:
         client = self._sdk(label)
         extra_body = dict(extra.pop("extra_body", {}) or {})
         if reasoning is not None:
-            extra_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = bool(reasoning)
+            extra_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = bool(
+                reasoning
+            )
 
         resp = client.chat.completions.create(
-            model=label, messages=messages, temperature=temperature,
-            max_tokens=max_tokens, stream=stream,
-            extra_body=extra_body or None, **extra,
+            model=label,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=stream,
+            extra_body=extra_body or None,
+            **extra,
         )
         if stream:  # advanced use: hand back the raw stream
             return resp  # type: ignore[return-value]
@@ -144,12 +179,94 @@ class CerberusClient:
         if reasoning_content is None and getattr(msg, "model_extra", None):
             reasoning_content = msg.model_extra.get("reasoning_content")
         trace, answer = _split_thinking(raw_content, reasoning_content)
-        return Response(content=answer, reasoning=trace,
-                        finish_reason=choice.finish_reason, raw=resp)
+        return Response(
+            content=answer,
+            reasoning=trace,
+            finish_reason=choice.finish_reason,
+            raw=resp,
+        )
+
+    async def _achat_one(
+        self,
+        client: Any,
+        label: str,
+        messages: list[dict],
+        *,
+        extra_body: dict,
+        max_tokens: Optional[int],
+        temperature: float,
+        extra: dict,
+    ) -> Response:
+        resp = await client.chat.completions.create(
+            model=label,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            extra_body=extra_body or None,
+            **extra,
+        )
+        choice = resp.choices[0]
+        msg = choice.message
+        raw_content = msg.content or ""
+        reasoning_content = getattr(msg, "reasoning_content", None)
+        if reasoning_content is None and getattr(msg, "model_extra", None):
+            reasoning_content = msg.model_extra.get("reasoning_content")
+        trace, answer = _split_thinking(raw_content, reasoning_content)
+        return Response(
+            content=answer,
+            reasoning=trace,
+            finish_reason=choice.finish_reason,
+            raw=resp,
+        )
+
+    def chat_batch(
+        self,
+        label: str,
+        messages: list[list[dict]],
+        *,
+        reasoning: Optional[bool] = None,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.7,
+        **extra,
+    ) -> list[Response]:
+        """Send `len(messages)` chat requests to model `label` in parallel.
+
+        Uses the async OpenAI SDK to fire all requests concurrently, then waits
+        for every one of them to complete. `messages` is a list of conversations
+        (each itself a list of `{role, content}` dicts); the returned list has
+        one `Response` per conversation, in the same order.
+
+        reasoning: None = leave the server default; True/False = best-effort ask the
+        model to think / not think (via chat_template_kwargs).
+        """
+        client = self._async_sdk(label)
+        extra_body = dict(extra.pop("extra_body", {}) or {})
+        if reasoning is not None:
+            extra_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = bool(
+                reasoning
+            )
+
+        async def _run() -> list[Response]:
+            tasks = [
+                self._achat_one(
+                    client,
+                    label,
+                    msgs,
+                    extra_body=extra_body,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    extra=extra,
+                )
+                for msgs in messages
+            ]
+            return await asyncio.gather(*tasks)
+
+        return asyncio.run(_run())
 
 
 if __name__ == "__main__":  # tiny smoke test / demo
     import sys
+
     c = CerberusClient()
     if not c.is_available():
         sys.exit("no endpoint map (run this on IBiSCo after 'cerberus up')")

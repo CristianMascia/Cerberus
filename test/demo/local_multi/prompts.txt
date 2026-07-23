@@ -1,0 +1,25 @@
+# Prompt inviati al modello.
+# Un prompt per riga; righe vuote e righe che iniziano con '#' ignorate.
+# Formulati per richiedere risposte lunghe (molti token), cosi' da rendere
+# piu' evidente il divario di tempo tra esecuzione sequenziale e parallela.
+
+Spiega in dettaglio, con molti esempi, cos'è un file GGUF e come viene usato da llama.cpp.
+Scrivi una funzione Python che calcoli il fattoriale di un numero, spiegando riga per riga come funziona.
+Elenca e descrivi in modo approfondito dieci vantaggi dell'inferenza locale rispetto alle API cloud.
+Traduci in inglese e poi in francese il seguente testo, spiegando le scelte di traduzione: "L'inferenza locale riduce la latenza e i costi."
+Racconta la storia dell'intelligenza artificiale dagli anni '50 ad oggi, con i principali eventi e scoperte.
+Descrivi passo per passo come funziona l'architettura Transformer, includendo attenzione, encoder e decoder.
+Scrivi un lungo saggio sui pro e i contro dell'open source nel campo dei modelli linguistici.
+Spiega in dettaglio la differenza tra quantizzazione Q4, Q5 e Q8 nei modelli GGUF, con esempi pratici.
+Elenca e descrivi dieci casi d'uso reali per un modello LLM eseguito in locale su hardware consumer.
+Scrivi una guida completa, passo per passo, per installare e configurare llama.cpp da zero.
+Descrivi in modo approfondito come funziona il meccanismo di self-attention in un Transformer.
+Scrivi un racconto breve ambientato in un data center dove i server discutono tra loro.
+Spiega dettagliatamente le differenze architetturali tra CPU, GPU e TPU per l'inferenza di modelli LLM.
+Elenca e spiega dieci best practice per ottimizzare le prestazioni di un modello LLM servito in locale.
+Descrivi in modo esaustivo il processo di fine-tuning di un modello linguistico, dalle basi ai dettagli tecnici.
+Scrivi una spiegazione dettagliata di cosa sono i token, come vengono generati e perché sono importanti.
+Elenca e descrivi in dettaglio dieci sfide tecniche nello sviluppo di infrastrutture per l'AI on-premise.
+Spiega in modo approfondito come funziona il KV cache nei modelli Transformer e perché è importante per le prestazioni.
+Scrivi un confronto dettagliato tra inferenza sequenziale e batching parallelo in un server di modelli LLM.
+Descrivi in dettaglio l'intero ciclo di vita di una richiesta di inferenza, dal client al modello e ritorno.
