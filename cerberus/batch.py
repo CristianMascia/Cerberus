@@ -192,8 +192,12 @@ def subset_config(cfg: Config, labels) -> Config:
 # Repeats and shards
 # --------------------------------------------------------------------------- #
 def expand_units(requests: list[BatchRequest], repeats: int) -> list[tuple[str, int]]:
-    """Work units (custom_id, repeat), repeats expanded before the split."""
-    return [(r.custom_id, k) for k in range(repeats) for r in requests]
+    """Work units (custom_id, repeat), repeats expanded before the split.
+
+    Request-major order, so the round-robin split sends the repeats of a request
+    to different shards (independent samples, balanced load).
+    """
+    return [(r.custom_id, k) for r in requests for k in range(repeats)]
 
 
 def make_shards(units: list, n_shards: int) -> list[list]:

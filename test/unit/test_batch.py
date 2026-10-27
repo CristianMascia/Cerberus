@@ -155,6 +155,9 @@ class TestSplit(unittest.TestCase):
         reqs = [batch.BatchRequest("q", "a", _msgs())]
         shards = batch.make_shards(batch.expand_units(reqs, 2), 2)
         self.assertEqual(shards, [[("q", 0)], [("q", 1)]])
+        reqs.append(batch.BatchRequest("r", "a", _msgs()))   # also with an even count
+        shards = batch.make_shards(batch.expand_units(reqs, 2), 2)
+        self.assertEqual(shards, [[("q", 0), ("r", 0)], [("q", 1), ("r", 1)]])
 
     def test_request_kwargs(self):
         kw = batch._request_kwargs({"seed": 7, "top_k": 20, "reasoning": False,
