@@ -219,6 +219,34 @@ class CerberusClient:
             raw=resp,
         )
 
+    async def achat(
+        self,
+        label: str,
+        messages: list[dict],
+        *,
+        reasoning: Optional[bool] = None,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.7,
+        **extra,
+    ) -> Response:
+        """Async version of `chat()` (no streaming), for callers that run their own
+        event loop and concurrency control (e.g. `cerberus batch run`)."""
+        client = self._async_sdk(label)
+        extra_body = dict(extra.pop("extra_body", {}) or {})
+        if reasoning is not None:
+            extra_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = bool(
+                reasoning
+            )
+        return await self._achat_one(
+            client,
+            label,
+            messages,
+            extra_body=extra_body,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra=extra,
+        )
+
     def chat_batch(
         self,
         label: str,

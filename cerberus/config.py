@@ -1,8 +1,9 @@
 """
 Cerberus — parsing and validation of the declarative model-serving spec (TOML).
 
-A models.conf declares an [allocation] budget, optional [defaults], and one
-[[model]] table per model to serve. `load_config()` returns a validated `Config`
+A models.conf declares an [allocation] budget, optional [defaults], one
+[[model]] table per model to serve and an optional [batch] section with the
+defaults of `cerberus batch`. `load_config()` returns a validated `Config`
 with typed `ModelSpec` entries; any problem raises `ConfigError` with a message
 that names the offending model/field.
 """
@@ -61,10 +62,25 @@ class ModelSpec:
 
 
 @dataclass
+class BatchSettings:
+    """Defaults of `cerberus batch` (the optional [batch] section); CLI flags win."""
+    shards: int = 1                 # parallel SLURM array tasks, each with its own servers
+    repeats: int = 1                # repetitions of every request
+    partition: Optional[str] = None
+    account: Optional[str] = None
+    time: str = "04:00:00"          # time limit of each array task
+    cpus_per_task: int = 8
+    max_parallel: Optional[int] = None  # max array tasks running at once (--array=...%N)
+    max_retries: int = 3            # per-request retries on transient errors
+    request_timeout: float = 600.0  # seconds per request
+
+
+@dataclass
 class Config:
     gpus_per_node: int
     models: list[ModelSpec] = field(default_factory=list)
     path: Optional[Path] = None
+    batch: BatchSettings = field(default_factory=BatchSettings)
 
     def by_label(self, label: str) -> ModelSpec:
         for m in self.models:
@@ -141,6 +157,36 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
     )
 
 
+def _batch_from_table(t: dict) -> BatchSettings:
+    where = "[batch]"
+    known = set(BatchSettings.__dataclass_fields__)
+    for key in t:
+        if key not in known:
+            raise ConfigError(f"{where}: unknown field '{key}' (allowed: {sorted(known)})")
+    b = BatchSettings()
+    for key in ("shards", "repeats", "cpus_per_task", "max_retries"):
+        if key in t:
+            val = _require(t, key, where, int)
+            if val < (0 if key == "max_retries" else 1):
+                raise ConfigError(f"{where}: '{key}' must be >= "
+                                  f"{0 if key == 'max_retries' else 1}")
+            setattr(b, key, val)
+    for key in ("partition", "account", "time"):
+        if key in t:
+            setattr(b, key, _require(t, key, where, str))
+    if "max_parallel" in t:
+        val = _require(t, "max_parallel", where, int)
+        if val < 1:
+            raise ConfigError(f"{where}: 'max_parallel' must be >= 1")
+        b.max_parallel = val
+    if "request_timeout" in t:
+        val = t["request_timeout"]
+        if isinstance(val, bool) or not isinstance(val, (int, float)) or val <= 0:
+            raise ConfigError(f"{where}: 'request_timeout' must be a number > 0")
+        b.request_timeout = float(val)
+    return b
+
+
 def load_config(path: str | Path) -> Config:
     """Parse and validate a models.conf (TOML). Raises ConfigError on any problem."""
     path = Path(path)
@@ -176,7 +222,8 @@ def load_config(path: str | Path) -> Config:
             )
         models.append(m)
 
-    return Config(gpus_per_node=gpus_per_node, models=models, path=path)
+    batch = _batch_from_table(data.get("batch", {}))
+    return Config(gpus_per_node=gpus_per_node, models=models, path=path, batch=batch)
 
 
 if __name__ == "__main__":  # quick manual check: python -m cerberus.config <file>

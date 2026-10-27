@@ -64,7 +64,8 @@ Componenti principali (tutti dentro il package `cerberus/`):
 | `cerberus/estimator.py` | stimatore VRAM/GGUF (header GGUF via HTTP, no download) |
 | `cerberus/containers/` | ricette Singularity per costruire immagine/sandbox |
 | `cerberus/node_launch.sh` | launcher per-nodo (eseguito via `srun`) |
-| `test/demo/` | demo eseguibili: `ibisco` (1 nodo), `ibisco_multinode` (2 nodi), `local` (immagine locale) |
+| `cerberus/batch.py` | batch API (`cerberus batch`): JSONL di richieste, ripetizioni, split in job array |
+| `test/demo/` | demo eseguibili: `ibisco` (1 nodo), `ibisco_multinode` (2 nodi), `local` (immagine locale), `batch_local` (batch API in locale) |
 | `test/unit/` | test unitari dei componenti in isolamento |
 | `docs/` | guide dettagliate (vedi sotto) |
 | `models.conf.example` | esempio annotato di configurazione |
@@ -80,6 +81,8 @@ Le procedure dettagliate NON sono in questo README ma nelle guide:
 - **[docs/progetto.md](docs/progetto.md)** — come realizzare un tuo progetto:
   scrivere `models.conf`, allocare le risorse, avviare i modelli e **integrare il
   client** nel tuo codice.
+- **[docs/batch.md](docs/batch.md)** — batch API: un JSONL di richieste eseguito con
+  ripetizioni e split in più job SLURM, ognuno con i propri server.
 - **[docs/demo.md](docs/demo.md)** — eseguire le demo passo-passo e diagnosi degli errori.
 - **[docs/installazione_container.md](docs/installazione_container.md)** — build
   dell'immagine `.sif` (locale) e della sandbox CUDA (IBiSCo).

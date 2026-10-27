@@ -22,6 +22,15 @@ kv_cache_type = "f16"      # f16 | q8_0 | q4_0   (-ctk / -ctv)
 reasoning     = "auto"     # on | off | auto     (--reasoning)
 
 # --------------------------------------------------------------------------- #
+[batch]                    # optional: defaults of `cerberus batch` (CLI flags win)
+shards        = 1          # parallel SLURM array tasks, each with its own servers
+repeats       = 1          # repetitions of every request
+partition     = "gpus"
+time          = "04:00:00" # time limit of each task
+cpus_per_task = 8
+max_retries   = 3          # per-request retries on transient errors
+
+# --------------------------------------------------------------------------- #
 # AUTO: Cerberus computes how many GPUs the model needs from the GGUF + token
 # budget (via vram_estimator, which already accounts for KV-cache, CUDA context,
 # compute buffers and a safety margin), then spreads it over that many GPUs.

@@ -1,5 +1,5 @@
 """
-Cerberus — deploy orchestrator (`cerberus up`).
+Cerberus — deploy orchestrator (`cerberus up`, and the servers of `cerberus batch run`).
 
 Runs on the master (inside a SLURM allocation you created). It:
   1. resolves the allocated nodes,
@@ -9,6 +9,9 @@ Runs on the master (inside a SLURM allocation you created). It:
   5. waits for every server to report a port and become healthy,
   6. writes <project_dir>/endpoints.json,
   7. blocks (keeping the servers up) until Ctrl-C / signal, then tears down.
+
+Steps 1-5 are `start()` and the teardown is `stop()`, so `cerberus batch run`
+reuses them without the blocking part.
 
 Only stdlib is used here (subprocess, urllib); no singularity is needed on the
 master — that runs inside the srun steps on the compute nodes.
@@ -23,6 +26,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -80,21 +84,42 @@ def _health_ok(host: str, port: int) -> bool:
         return False
 
 
-def up(config: Config, project_dir: Path, token: str | None = None) -> Path:
+@dataclass
+class Deployment:
+    """Servers started by `start()`; pass it to `stop()` to tear them down."""
+    job: str
+    rundir: Path
+    endpoints: dict
+    procs: list = field(default_factory=list)
+
+    def alive(self) -> bool:
+        return all(pr.poll() is None for pr in self.procs)
+
+
+def start(config: Config, project_dir: Path, token: str | None = None,
+          needs: list[placement.ModelNeed] | None = None) -> Deployment:
+    """Launch every model of `config` on the current SLURM allocation.
+
+    Returns once all servers are healthy. `needs` lets the caller pass a placement
+    input computed elsewhere (e.g. on the login node by `cerberus batch submit`),
+    so the compute node does not re-read the GGUF headers over HTTP.
+    """
     st = _settings()
     nodes = slurm_nodes()
     print(f"[cerberus] allocation: {len(nodes)} node(s): {' '.join(nodes)}")
 
     # 1-2. needs + placement
-    print("[cerberus] computing VRAM needs and placement...")
-    needs = placement.compute_needs(config, token=token)
+    if needs is None:
+        print("[cerberus] computing VRAM needs and placement...")
+        needs = placement.compute_needs(config, token=token)
     placements, n_used = placement.plan(needs, config.gpus_per_node, max_nodes=len(nodes))
     print(f"[cerberus] plan uses {n_used}/{len(nodes)} node(s):")
     for p in placements:
         print(f"  {p.spec.label}: node{p.node_idx} ({nodes[p.node_idx]}) "
               f"dev={p.device_arg} ctx={p.spec.ctx_size} (~{p.footprint_gib:.1f} GiB)")
 
-    # 3. runtime dir + plan file (shared Lustre so all nodes read it)
+    # 3. runtime dir + plan file (shared Lustre so all nodes read it).
+    # In a job array SLURM_JOB_ID differs per task, so the dirs do not collide.
     job = os.environ.get("SLURM_JOB_ID", "local")
     rundir = project_dir / ".cerberus" / job
     logdir = rundir / "logs"
@@ -131,7 +156,7 @@ def up(config: Config, project_dir: Path, token: str | None = None) -> Path:
 
     # 4. one srun step per used node
     used_nodes = sorted({p.node_idx for p in placements})
-    procs = []
+    dep = Deployment(job=job, rundir=rundir, endpoints={})
     for idx in used_nodes:
         host = nodes[idx]
         cmd = ["srun", "--nodes=1", "--ntasks=1", f"--nodelist={host}", "--overlap"]
@@ -142,49 +167,61 @@ def up(config: Config, project_dir: Path, token: str | None = None) -> Path:
         cmd += ["bash", str(NODE_LAUNCH), str(idx), str(plan_tsv), str(parts)]
         print(f"[cerberus] launching node {idx} ({host})")
         srun_log = open(logdir / f"node_{idx}_srun.log", "w")
-        procs.append(subprocess.Popen(cmd, env=child_env, stdout=srun_log, stderr=srun_log))
-
-    def cleanup(*_):
-        print("\n[cerberus] tearing down (stopping srun steps)...")
-        for pr in procs:
-            pr.terminate()
-        for pr in procs:
-            try:
-                pr.wait(timeout=15)
-            except Exception:
-                pr.kill()
-        print("[cerberus] done.")
-
-    signal.signal(signal.SIGINT, lambda *a: (cleanup(), sys.exit(0)))
-    signal.signal(signal.SIGTERM, lambda *a: (cleanup(), sys.exit(0)))
+        dep.procs.append(subprocess.Popen(cmd, env=child_env, stdout=srun_log, stderr=srun_log))
 
     # 5. wait for every model to report host:port and become healthy
     try:
-        endpoints = _await_ready(placements, nodes, parts, st["health_timeout"], logdir)
-    except Exception:
-        cleanup()
+        dep.endpoints = _await_ready(placements, nodes, parts, st["health_timeout"], logdir)
+    except BaseException:
+        stop(dep)
         raise
+    return dep
+
+
+def stop(dep: Deployment) -> None:
+    """Stop the srun steps (and thus the servers) of a deployment."""
+    print("\n[cerberus] tearing down (stopping srun steps)...")
+    for pr in dep.procs:
+        if pr.poll() is None:
+            pr.terminate()
+    for pr in dep.procs:
+        try:
+            pr.wait(timeout=15)
+        except Exception:
+            pr.kill()
+    print("[cerberus] done.")
+
+
+def write_endpoints(dep: Deployment, path: Path) -> Path:
+    out = {
+        "job_id": dep.job,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "models": dep.endpoints,
+    }
+    path.write_text(json.dumps(out, indent=2))
+    return path
+
+
+def up(config: Config, project_dir: Path, token: str | None = None) -> Path:
+    dep = start(config, project_dir, token=token)
+
+    signal.signal(signal.SIGINT, lambda *a: (stop(dep), sys.exit(0)))
+    signal.signal(signal.SIGTERM, lambda *a: (stop(dep), sys.exit(0)))
 
     # 6. write endpoints.json into the project dir
-    out = {
-        "job_id": job,
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "models": endpoints,
-    }
-    ep_path = project_dir / "endpoints.json"
-    ep_path.write_text(json.dumps(out, indent=2))
-    print(f"[cerberus] ready — {len(endpoints)} model(s). endpoints: {ep_path}")
-    for label, m in endpoints.items():
+    ep_path = write_endpoints(dep, project_dir / "endpoints.json")
+    print(f"[cerberus] ready — {len(dep.endpoints)} model(s). endpoints: {ep_path}")
+    for label, m in dep.endpoints.items():
         print(f"  {label}: {m['base_url']}  (reasoning={m['reasoning']})")
 
     # 7. block, keeping servers up, until interrupted
     print("[cerberus] serving. Press Ctrl-C to stop.")
     try:
-        while all(pr.poll() is None for pr in procs):
+        while dep.alive():
             time.sleep(5)
         print("[cerberus] a node step exited; tearing down.")
     finally:
-        cleanup()
+        stop(dep)
     return ep_path
 
 

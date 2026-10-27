@@ -1,0 +1,4 @@
+{"custom_id": "py-reverse", "messages": [{"role": "user", "content": "Write a Python function that reverses a string."}], "params": {"temperature": 0.2, "max_tokens": 128}}
+{"custom_id": "sql-count", "messages": [{"role": "system", "content": "You are a concise SQL assistant."}, {"role": "user", "content": "Count the rows of table users."}], "params": {"temperature": 0.2, "max_tokens": 64, "seed": 42}}
+{"custom_id": "bash-files", "messages": [{"role": "user", "content": "Bash one-liner to count the files in the current directory."}], "params": {"max_tokens": 64, "top_k": 20}}
+{"custom_id": "openai-format", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "qwen-coder", "messages": [{"role": "user", "content": "What is a Python list comprehension? One sentence."}], "max_completion_tokens": 96, "temperature": 0.3}}
