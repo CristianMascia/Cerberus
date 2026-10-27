@@ -1,9 +1,13 @@
 Bootstrap: docker
 From: nvidia/cuda:12.4.1-devel-ubuntu22.04
 
-%post
-    # <<< impostare con il valore della propria GPU (compute_cap senza punto) >>>
+%arguments
+    # compute capability della GPU senza punto (Ampere 86, Ada 89, ...).
+    # build_llamacpp_local.sh la rileva da nvidia-smi e la passa con --build-arg.
     ARCH=89
+
+%post
+    ARCH={{ ARCH }}
     export DEBIAN_FRONTEND=noninteractive
 
     # Symlink stub -> libcuda.so.1: il linker risolve i simboli del driver

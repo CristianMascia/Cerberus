@@ -10,6 +10,11 @@
 #   file.def   -> llamacpp_local.def
 #   output.sif -> llamacpp_local.sif
 #
+# Variabili d'ambiente:
+#   CUDA_ARCH  compute capability senza punto (es. 86). Se assente viene
+#              rilevata dalla prima GPU con nvidia-smi; se nemmeno quello è
+#              disponibile resta il default del .def.
+#
 set -euo pipefail
 
 # --- Lavora sempre nella directory dello script (path relativi) -------------
@@ -37,6 +42,20 @@ else
 fi
 echo ">> Uso: $SINGBIN"
 
+# --- Architettura CUDA (compute capability della GPU) -----------------------
+CUDA_ARCH="${CUDA_ARCH:-}"
+if [[ -z "$CUDA_ARCH" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+    CUDA_ARCH="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null \
+                 | head -n1 | tr -d '.[:space:]')" || CUDA_ARCH=""
+fi
+BUILD_ARGS=()
+if [[ -n "$CUDA_ARCH" ]]; then
+    BUILD_ARGS+=(--build-arg "ARCH=$CUDA_ARCH")
+    echo ">> CUDA_ARCH: $CUDA_ARCH"
+else
+    echo ">> CUDA_ARCH non rilevata: uso il default del .def"
+fi
+
 # --- TMPDIR locale, per NON saturare /tmp (spesso tmpfs in RAM) --------------
 # Vive nella directory dello script (stesso filesystem della home, con spazio).
 BUILD_TMP="$SCRIPT_DIR/.build-tmp"
@@ -54,11 +73,11 @@ fi
 
 # --- Build -------------------------------------------------------------------
 echo ">> Costruzione: $OUTPUT  <-  $DEF_FILE"
-if ! "$SINGBIN" build "${BUILD_OPTS[@]}" "$OUTPUT" "$DEF_FILE"; then
+if ! "$SINGBIN" build "${BUILD_OPTS[@]}" "${BUILD_ARGS[@]}" "$OUTPUT" "$DEF_FILE"; then
     echo "" >&2
     echo "ERRORE: build fallita." >&2
     echo "Se il problema è di privilegi, riprova con sudo:" >&2
-    echo "    sudo $SINGBIN build $OUTPUT $DEF_FILE" >&2
+    echo "    sudo $SINGBIN build ${BUILD_ARGS[*]} $OUTPUT $DEF_FILE" >&2
     echo "(in tal caso NON serve --fakeroot)." >&2
     exit 1
 fi

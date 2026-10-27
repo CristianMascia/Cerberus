@@ -54,6 +54,12 @@ si utilizzi il valore relativo alla GPU destinata all'inferenza.
 > `nvidia-smi --query-gpu=name --format=csv,noheader` e si effettui la conversione
 > manualmente (Pascal `61`, Turing `75`, Ampere `86`, Ada `89`, Blackwell `120`).
 
+> **Nota.** Lo script `cerberus/containers/build_llamacpp_local.sh` esegue questo
+> rilevamento da solo e passa il valore al `.def` con `--build-arg ARCH=<valore>`
+> (sezione `%arguments`, richiede SingularityCE ≥ 4 o Apptainer ≥ 1.3). Per
+> forzare un valore diverso: `CUDA_ARCH=86 ./build_llamacpp_local.sh`. Senza GPU
+> né `CUDA_ARCH` resta il default del `.def` (`89`).
+
 ### 1.2 File di definizione `llamacpp-local.def`
 
 Il template di questo file e' presente nella cartella `/containers/`.
