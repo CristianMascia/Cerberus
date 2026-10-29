@@ -2,7 +2,7 @@
 
 Prova l'intero flusso di `cerberus batch` sul proprio PC, **senza SLURM**: un
 `llama-server` con Qwen2.5-Coder-0.5B via Singularity e due shard eseguiti sullo
-stesso server con `--endpoints`. Guida completa: [docs/batch.md](../../../docs/batch.md).
+stesso server con `--endpoints`.
 
 ## Contenuto
 
@@ -17,9 +17,7 @@ stesso server con `--endpoints`. Guida completa: [docs/batch.md](../../../docs/b
 
 ## Prerequisiti
 
-1. Immagine `cerberus/containers/llamacpp_local.sif`
-   (vedi [docs/installazione_container.md](../../../docs/installazione_container.md));
-   altrimenti `CERBERUS_IMAGE=/percorso/immagine.sif`.
+1. Un'immagine .sif con `llama-server`, indicata con `CERBERUS_IMAGE=/percorso/immagine.sif`.
 2. Pacchetto `cerberus` con le dipendenze (`pip install -e .` nella repo). Lo
    script usa `<repo>/.venv/bin/python` se esiste, altrimenti `python3`, o `PYTHON`.
 3. **Rete**: `submit` legge l'header del GGUF da Hugging Face per stimare la VRAM.

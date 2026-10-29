@@ -19,7 +19,7 @@ PARTS="${3:?missing endpoints.parts}"
 
 # Two ways to run llama-server:
 #   CERBERUS_IMAGE set  -> a self-contained .sif with llama-server inside
-#                          (cerberus/containers/llamacpp_local.def, e.g. on H100);
+#                          (e.g. ~/containers/llamacpp_h100.sif on the H100s);
 #   otherwise           -> CUDA sandbox + llama.cpp binaries on the host (IBiSCo).
 IMAGE="${CERBERUS_IMAGE:-}"
 VLLM_IMAGE="${CERBERUS_VLLM_IMAGE:-}"

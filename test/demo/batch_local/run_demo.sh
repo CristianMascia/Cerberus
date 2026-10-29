@@ -73,7 +73,7 @@ trap cleanup EXIT INT TERM
 SINGULARITY="$(command -v singularity || command -v apptainer || true)"
 [ -n "$SINGULARITY" ] || die "singularity/apptainer non trovato nel PATH."
 [ -f "$IMAGE" ] || die "immagine non trovata: $IMAGE
-       Costruirla secondo docs/installazione_container.md, oppure impostare CERBERUS_IMAGE."
+       Impostare CERBERUS_IMAGE."
 "$PYTHON" -c "import openai" 2>/dev/null \
     || die "il pacchetto 'openai' manca per $PYTHON (pip install -e $REPO)"
 command -v curl >/dev/null 2>&1 || die "curl non trovato."

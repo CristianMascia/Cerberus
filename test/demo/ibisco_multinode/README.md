@@ -2,7 +2,6 @@
 
 Serves **4 models across 2 nodes** using the Cerberus tool, with **automatic
 node + GPU placement**, then queries them through the OpenAI-compatible client.
-See the full tool guide in [../../../docs/demo.md](../../../docs/demo.md).
 
 ## What makes it multi-node
 `gpus_per_node = 3`. Two **Llama-3.3-70B** instances (~40 GiB each) are `AUTO`: each

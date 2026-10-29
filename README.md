@@ -1,107 +1,68 @@
 # Cerberus
 
-**Serving dichiarativo di modelli LLM con `llama.cpp` sul cluster HPC IBiSCo**
-(SLURM, Singularity, GPU NVIDIA V100-SXM2 da 32 GB, filesystem Lustre).
+Serving dichiarativo di modelli LLM su cluster SLURM (IBiSCo, sibisco). In un
+solo `models.conf` (TOML) dichiari quali modelli servire e quanto contesto
+serve. Cerberus calcola le GPU necessarie, posiziona i modelli su nodi e GPU
+dell'allocazione e avvia i server: `llama-server` per i GGUF, `vllm serve` per i
+safetensors. Infine scrive `endpoints.json`, che il client usa per instradare le
+richieste per **label**.
 
-Scrivi **un solo file** — `models.conf` (TOML) — in cui dichiari *quali* modelli
-vuoi servire e *quanto* occupano. Cerberus fa il resto: scarica i GGUF, decide
-quante GPU serve a ogni modello, li posiziona su nodi e GPU dell'allocazione,
-avvia i server `llama-server` e genera una **mappa degli endpoint** che un client
-Python usa per instradare le richieste **per etichetta (label)** tramite l'API
-compatibile con OpenAI.
-
-Cerberus è pensato per essere **semplice da usare**: `clona → configura → lancia`.
-
-Gira anche sull'**HPC UniNA** (partizione `ingnormal`, 2x H100 NVL da 94 GB per
-nodo, Apptainer): stesso codice, con `vram_gib = 92` nel `models.conf` e il
-profilo `profiles/unina-h100.env`. Vedi [docs/hpc_unina_h100.md](docs/hpc_unina_h100.md).
-
-## Avvio rapido
+## Uso
 
 ```bash
-# 1. ambiente (una volta)
-conda create -n cerberus python=3.11 -y && conda activate cerberus
-pip install -e .                     # installa il comando `cerberus` e le dipendenze
-export HF_TOKEN=hf_...
-
-# 2. configura e verifica
-cerberus validate                    # valida models.conf, stima GPU/nodi necessari
-cerberus download                    # scarica i GGUF nella cache HF condivisa
-
-# 3. alloca le risorse e avvia
-salloc --partition=gpus --nodes=<N> --ntasks-per-node=1 --gpus-per-node=3 ...
-cerberus up                          # posiziona, avvia i server, scrive endpoints.json
+cerberus validate -c models.conf     # schema + stima GPU/nodi
+cerberus download -c models.conf     # pesi nella cache HF (dal login node)
+salloc ...                           # l'allocazione la crei tu
+cerberus up -c models.conf           # avvia i server, scrive endpoints.json, resta in servizio
+cerberus status                      # UP/DOWN di ogni server
+cerberus batch submit|run|status|merge ...   # batch API, vedi docs/batch.md
 ```
 
 ```python
-# 4. usa i modelli dal tuo codice
 from cerberus import CerberusClient
-c = CerberusClient()
-print(c.chat("qwen-big", [{"role": "user", "content": "Ciao"}]).content)
+c = CerberusClient()                                   # legge ./endpoints.json
+r = c.chat("qwen3-8b", [{"role": "user", "content": "Ciao"}], reasoning=False)
+print(r.content, r.reasoning)
+rs = c.chat_batch("qwen3-8b", [msgs1, msgs2, ...])     # richieste in parallelo
 ```
 
-## Architettura in breve
+`models.conf.example` è l'esempio annotato con tutti i campi. I principali sono:
 
-```
-models.conf ──► cerberus validate / download / up ──► endpoints.json ──► CerberusClient
-  (tu)            (config → VRAM → placement →            (label →          (il tuo
-                   SLURM/Singularity → server)             host:port)        codice)
-```
+- `backend = "llamacpp"` (GGUF, `gguf_file`) oppure `"vllm"` (safetensors di
+  `hf_repo`). Un modello vLLM occupa GPU intere.
+- `alloc_mode = "AUTO"` (GPU calcolate dai pesi e dal contesto) oppure `"MANUAL"`
+  con `num_gpus`.
+- `max_input_tokens` + `max_output_tokens` è il contesto di una richiesta;
+  `parallel` è il numero di richieste servite insieme.
+- `replicas = N` crea N server identici, ognuno sulla sua GPU; il client alterna
+  le richieste tra le copie.
 
-Componenti principali (tutti dentro il package `cerberus/`):
+Su sibisco l'ambiente è in `profiles/unina-h100.env` (immagini `.sif`,
+`HF_HOME`, token). Il tensor parallel di vLLM su 2 GPU lì non funziona (P2P tra
+le GPU rotto), mentre le repliche sì.
 
-- **config** — parsing e validazione di `models.conf`.
-- **estimator** — stima VRAM leggendo gli header GGUF (senza scaricare).
-- **vram / placement** — decide quante GPU servono (AUTO) e impacchetta i modelli
-  su nodi e GPU (condivisione dei piccoli, tensor-split intra-nodo dei grandi).
-- **download** — scarica i GGUF esatti (via `huggingface_hub`).
-- **deploy + node_launch.sh** — avvia i `llama-server` nella sandbox CUDA tramite
-  `srun`, uno per nodo, e genera la mappa degli endpoint.
-- **client** — client OpenAI-compatibile che instrada per label e separa il
-  *reasoning* dalla risposta.
+## Altri strumenti
 
-## Struttura della repository
+- `scripts/bench.py`: benchmark di un modello servito (`run`) e confronto tra
+  risultati (`compare`); configurazioni e job in `test/bench/`.
+- `scripts/new-exp.sh`: crea un esperimento vLLM offline (venv sopra l'env
+  `vllm-base`, cartella in `~/experiments/`).
+
+## Struttura
 
 | Percorso | Contenuto |
-|----------|-----------|
-| `cerberus/` | il tool e **tutti** i suoi componenti in un unico posto |
-| `cerberus/estimator.py` | stimatore VRAM/GGUF (header GGUF via HTTP, no download) |
-| `cerberus/containers/` | ricette Singularity per costruire immagine/sandbox |
-| `cerberus/node_launch.sh` | launcher per-nodo (eseguito via `srun`) |
-| `cerberus/batch.py` | batch API (`cerberus batch`): JSONL di richieste, ripetizioni, split in job array |
-| `test/demo/` | demo eseguibili: `ibisco` (1 nodo), `ibisco_multinode` (2 nodi), `local` (immagine locale), `batch_local` (batch API in locale) |
-| `test/unit/` | test unitari dei componenti in isolamento |
-| `docs/` | guide dettagliate (vedi sotto) |
-| `models.conf.example` | esempio annotato di configurazione |
-| `pyproject.toml`, `environment.yml` | packaging e ambiente conda |
-
-## Documentazione (in `docs/`)
-
-Le procedure dettagliate NON sono in questo README ma nelle guide:
-
-- **[docs/panoramica.md](docs/panoramica.md)** — cosa offre Cerberus e come funziona,
-  nel dettaglio (schema `models.conf`, AUTO/MANUAL, placement, argomenti dei server,
-  variabili d'ambiente).
-- **[docs/progetto.md](docs/progetto.md)** — come realizzare un tuo progetto:
-  scrivere `models.conf`, allocare le risorse, avviare i modelli e **integrare il
-  client** nel tuo codice.
-- **[docs/batch.md](docs/batch.md)** — batch API: un JSONL di richieste eseguito con
-  ripetizioni e split in più job SLURM, ognuno con i propri server.
-- **[docs/demo.md](docs/demo.md)** — eseguire le demo passo-passo e diagnosi degli errori.
-- **[docs/installazione_container.md](docs/installazione_container.md)** — build
-  dell'immagine `.sif` (locale) e della sandbox CUDA (IBiSCo).
-- **[docs/download_modelli.md](docs/download_modelli.md)** — download dei modelli da Hugging Face.
-- **[docs/uso_llamacpp.md](docs/uso_llamacpp.md)** — uso manuale di `llama.cpp` in Singularity.
+| --- | --- |
+| `cerberus/` | config, stima VRAM (`estimator`, `vram`, `vllm_backend`), `placement`, `download`, `deploy` + `node_launch.sh`, `client`, `batch`, `cli` |
+| `profiles/` | variabili d'ambiente per cluster |
+| `scripts/` | `bench.py`, `new-exp.sh` |
+| `test/unit/` | test unitari (niente rete, GPU o SLURM) |
+| `test/demo/` | demo d'integrazione: IBiSCo 1 e 2 nodi, sibisco llama.cpp e vLLM, batch in locale |
+| `test/bench/` | configurazioni e job del benchmark |
+| `docs/batch.md` | formato dell'input e comandi della batch API |
 
 ## Test
 
 ```bash
-python -m unittest discover -s test/unit          # test unitari (nessuna dipendenza pesante)
+pip install -e .
+python -m unittest discover -s test/unit
 ```
-Le demo in `test/demo/` sono test d'integrazione eseguibili su IBiSCo — vedi
-[docs/demo.md](docs/demo.md).
-
-## Requisiti
-
-Python ≥ 3.11; sul cluster: sandbox CUDA e binari di `llama.cpp` compilati per
-sm_70 (vedi [docs/installazione_container.md](docs/installazione_container.md)).

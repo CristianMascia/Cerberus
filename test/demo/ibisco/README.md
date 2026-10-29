@@ -2,8 +2,7 @@
 
 Serves **a Llama-3.3-70B model (auto-split over 2 GPUs) plus a small model, on one
 node** using the Cerberus tool, then queries them through the OpenAI-compatible
-client. See the full tool guide in
-[../../../docs/demo.md](../../../docs/demo.md).
+client.
 
 The 70B Q4_K_M (~40 GiB) does not fit on a single 32 GB V100, so AUTO gives it
 **2 GPUs** (tensor-split); the small `qwen-coder` packs onto the third GPU — all on
@@ -19,7 +18,7 @@ one node. (First run downloads ~40 GiB.)
 
 ## Prerequisites
 - `cerberus` conda env installed (`pip install -e .` from the repo root) with `HF_TOKEN` set.
-- CUDA sandbox + llama.cpp binaries under `~/tools` (see the install guide).
+- CUDA sandbox + llama.cpp binaries under `~/tools`.
 
 ## Run
 ```bash

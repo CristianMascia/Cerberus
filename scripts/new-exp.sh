@@ -5,7 +5,7 @@
 #   source new-exp.sh exp-x [pacchetti...]   crea il workspace e lo attiva
 #   bash   new-exp.sh exp-x [pacchetti...]   lo crea e stampa come attivarlo
 #
-# L'env base si crea una volta con envs/vllm-base.yml (docs/esperimenti_offline.md).
+# L'env base è ~/miniforge3/envs/vllm-base (Python 3.12 + vllm==0.32.0, installato dal login node).
 #
 # Crea:
 #   ~/venvs/exp-x         venv leggero con --system-site-packages (vede torch, vllm, ...)

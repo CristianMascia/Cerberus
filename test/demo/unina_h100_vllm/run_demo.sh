@@ -19,8 +19,8 @@ cd "$DIR"
 source "$DIR/../../../profiles/unina-h100.env"
 
 command -v cerberus >/dev/null 2>&1 || { echo "activate the 'cerberus' env (pip install -e .)"; exit 1; }
-[ -f "$CERBERUS_IMAGE" ] || { echo "image $CERBERUS_IMAGE missing: see docs/hpc_unina_h100.md"; exit 1; }
-[ -f "$CERBERUS_VLLM_IMAGE" ] || { echo "vLLM image $CERBERUS_VLLM_IMAGE missing: see docs/hpc_unina_h100.md"; exit 1; }
+[ -f "$CERBERUS_IMAGE" ] || { echo "image $CERBERUS_IMAGE missing: see profiles/unina-h100.env"; exit 1; }
+[ -f "$CERBERUS_VLLM_IMAGE" ] || { echo "vLLM image $CERBERUS_VLLM_IMAGE missing: see profiles/unina-h100.env"; exit 1; }
 
 rm -f endpoints.json
 cerberus download -c models.conf

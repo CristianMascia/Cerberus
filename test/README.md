@@ -14,18 +14,18 @@ Coprono: parsing/validazione di `models.conf` (`cerberus.config`), bin-packing d
 posizionamento (`cerberus.placement`), separazione del reasoning e risoluzione
 della mappa endpoint (`cerberus.client`), espansione dei GGUF spezzati
 (`cerberus.download`), batch API: parsing, split, ripresa e merge (`cerberus.batch`),
-backend vLLM: config, stima delle GPU, riga del piano, health e client (`test_vllm.py`).
+backend vLLM: config, stima delle GPU, riga del piano, health e client (`test_vllm.py`),
+repliche: config, posizionamento, endpoint e round-robin (`test_replicas.py`).
 
-## `demo/` — test d'integrazione (su IBiSCo)
+## `demo/` — test d'integrazione
 Demo eseguibili end-to-end che usano il tool completo (allocazione, avvio dei
 server, interrogazione via client):
 
 - `ibisco/` — singolo nodo (un modello grande auto-split su 2 GPU + un piccolo);
 - `ibisco_multinode/` — due nodi (due modelli grandi auto-distribuiti);
-- `unina_h100/` — HPC UniNA, un nodo 2x H100 (il 70B su una sola GPU);
-- `local/` — variante locale con immagine `.sif` (indipendente dal tool);
+- `unina_h100/` — sibisco, un nodo 2x H100 (il 70B su una sola GPU);
+- `unina_h100_vllm/` — sibisco, vLLM e llama.cpp insieme; `replicas.conf` per le repliche;
 - `batch_local/` — batch API in locale, senza SLURM (`run_demo.sh`), con
   `demo/batch_check.py` che verifica i risultati.
 
-Istruzioni passo-passo e diagnosi degli errori: [../docs/demo.md](../docs/demo.md).
-Il client condiviso è `demo/demo_client.py` (usato da entrambe le demo IBiSCo).
+Il client condiviso è `demo/demo_client.py` (usato dalle demo IBiSCo e sibisco).

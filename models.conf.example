@@ -1,14 +1,14 @@
 # Cerberus — declarative model-serving spec (TOML).
 #
 # You declare WHICH models to serve and HOW MUCH they need; Cerberus handles the
-# rest: download, GPU/node placement, launching the llama.cpp servers, and writing
-# an endpoint map that client_llamacpp.py uses to route requests by label.
+# rest: download, GPU/node placement, launching the servers (llama.cpp or vLLM),
+# and writing an endpoint map that CerberusClient uses to route requests by label.
 #
 # Workflow:
-#   cerberus download            # fetch the exact GGUFs into the shared HF cache
+#   cerberus download            # fetch the weights into the shared HF cache
 #   salloc ... / sbatch ...      # you allocate the nodes (Cerberus packs into them)
 #   cerberus up                  # launch servers + write endpoints.json
-#   # ... use client_llamacpp.py from your experiment code ...
+#   # ... use `from cerberus import CerberusClient` in your code ...
 
 # --------------------------------------------------------------------------- #
 [allocation]
@@ -34,7 +34,7 @@ max_retries   = 3          # per-request retries on transient errors
 
 # --------------------------------------------------------------------------- #
 # AUTO: Cerberus computes how many GPUs the model needs from the GGUF + token
-# budget (via vram_estimator, which already accounts for KV-cache, CUDA context,
+# budget (via cerberus.estimator, which already accounts for KV-cache, CUDA context,
 # compute buffers and a safety margin), then spreads it over that many GPUs.
 [[model]]
 label             = "qwen-big"

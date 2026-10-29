@@ -2,12 +2,11 @@
 
 Un solo `cerberus up` con due backend: **Qwen3-8B servito da vLLM** su una H100
 intera e un modello GGUF piccolo su **llama.cpp** nell'altra. Il client li
-interroga allo stesso modo. Guida: [../../../docs/hpc_unina_h100.md](../../../docs/hpc_unina_h100.md).
+interroga allo stesso modo.
 
 ## Prerequisiti
 - env `cerberus` (Miniforge, `pip install -e .`);
-- `~/containers/llamacpp_h100.sif` e `~/containers/vllm-0.32.0.sif`, vedi la guida
-  (punti 2 e 5).
+- `~/containers/llamacpp_h100.sif` e `~/containers/vllm-0.32.0.sif`.
 
 ## Esecuzione
 ```bash

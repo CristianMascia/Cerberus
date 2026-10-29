@@ -167,7 +167,7 @@ def start(config: Config, project_dir: Path, token: str | None = None,
             fh.write(plan_row(p, st["hf_cache"]) + "\n")
     if any(p.spec.is_vllm for p in placements) and not st["vllm_image"]:
         raise RuntimeError("vllm models need CERBERUS_VLLM_IMAGE (the vLLM .sif); "
-                           "see docs/hpc_unina_h100.md")
+                           "see profiles/unina-h100.env")
 
     # export settings for node_launch (srun propagates the environment)
     child_env = dict(os.environ)
