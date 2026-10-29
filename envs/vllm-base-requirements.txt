@@ -1,0 +1,2 @@
+# pacchetti pip dell'env vllm-base (vedi envs/vllm-base.yml)
+vllm==0.32.0       # porta torch 2.13 (CUDA 13.0), ok col driver 590

@@ -23,7 +23,10 @@ con lo stesso ambiente dove poi girerà:
 salloc -p ingnormal -N 1 --gpus-per-node=1 --cpus-per-task=10 --mem=64G --time=01:00:00
 srun --pty bash -l
 cd ~/Projects/Cerberus
-conda env create -f envs/vllm-base.yml
+conda env create -f envs/vllm-base.yml          # solo Python 3.12
+export TMPDIR=/tmp/$USER-pip PIP_CACHE_DIR=/tmp/$USER-pip/cache   # disco locale, non Lustre
+~/miniforge3/envs/vllm-base/bin/python -m pip install -r envs/vllm-base-requirements.txt
+rm -rf /tmp/$USER-pip
 ~/miniforge3/envs/vllm-base/bin/python -c \
   "import vllm, torch; print(vllm.__version__, torch.__version__, torch.cuda.is_available())"
 exit; exit

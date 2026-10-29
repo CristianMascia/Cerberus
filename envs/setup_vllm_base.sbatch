@@ -24,6 +24,12 @@ else
     # un env lasciato a metà (es. creazione interrotta) si rifà da zero
     [ -d "$BASE" ] && { echo "[setup] $BASE incompleto: lo ricreo"; "$CONDA" env remove -y -p "$BASE"; }
     "$CONDA" env create -f "$REPO/envs/vllm-base.yml"
+    # file temporanei e cache di pip sul disco locale del nodo, non su Lustre
+    export TMPDIR="/tmp/$USER-pip-${SLURM_JOB_ID:-$$}" PIP_CACHE_DIR="/tmp/$USER-pip-${SLURM_JOB_ID:-$$}/cache"
+    mkdir -p "$PIP_CACHE_DIR"
+    trap 'rm -rf "$TMPDIR"' EXIT
+    "$BASE/bin/python" -m pip install --log "$HOME/vllm-base-pip.log" \
+        -r "$REPO/envs/vllm-base-requirements.txt"
 fi
 "$BASE/bin/python" -c "import vllm, torch; print('[setup]', vllm.__version__, torch.__version__, 'cuda', torch.cuda.is_available())"
 
