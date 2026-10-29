@@ -274,6 +274,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None):
+    # line-buffered even when redirected (cerberus up > up.log &), so logs show progress
+    sys.stdout.reconfigure(line_buffering=True)
     args = build_parser().parse_args(argv)
     args.func(args)
 
