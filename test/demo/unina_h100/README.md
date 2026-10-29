@@ -7,7 +7,7 @@ da 16k token. Guida completa: [../../../docs/hpc_unina_h100.md](../../../docs/hp
 
 ## Prerequisiti
 - env `cerberus` (Miniforge, `pip install -e .`), `HF_TOKEN` impostato;
-- immagine `cerberus/containers/llamacpp_h100.sif` (sm_90), vedi la guida.
+- immagine `~/containers/llamacpp_h100.sif` (sm_90), vedi la guida.
 
 ## Esecuzione
 ```bash

@@ -33,8 +33,23 @@ ogni shard ha i suoi 10 CPU e 4 GPU. La partizione di default è `normal`:
 specifica sempre `-p ingnormal`.
 
 Il login node (`uninahpc-ui`) non ha GPU, `apptainer`, `git` né `cmake`: va
-bene per `cerberus validate`, `download` e `batch submit`, mentre clone della
-repo, build dell'immagine e test con le GPU si fanno su un nodo di calcolo.
+bene per `cerberus validate`, `download` e `batch submit` (e per il clone, con
+il `git` di Miniforge), mentre build delle immagini e test con le GPU si fanno
+su un nodo di calcolo.
+
+## Layout delle cartelle
+
+Tutto sta sotto la home su Lustre, condivisa tra login e nodi. Le immagini dei
+due backend (llama.cpp ora, vLLM in seguito) stanno insieme in `~/containers`,
+e la cache HF è una sola per GGUF e safetensors.
+
+```
+~/miniforge3/              conda: env "cerberus" (e in seguito "vllm-base")
+~/Projects/Cerberus/       questa repo (main), installata con pip install -e
+~/containers/              llamacpp_h100.sif (e in seguito l'immagine vLLM)
+~/.cache/huggingface/      cache HF unica per entrambi i backend
+~/.apptainer/cache/        cache di Apptainer, fuori da /tmp (70 GB condivisi)
+```
 
 ## 1. Python e repo (una volta, sul login node)
 
@@ -42,34 +57,58 @@ repo, build dell'immagine e test con le GPU si fanno su un nodo di calcolo.
 curl -L -o Miniforge3.sh \
   https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
 bash Miniforge3.sh -b -p $HOME/miniforge3 && rm Miniforge3.sh
-source $HOME/miniforge3/bin/activate
-# git c'è solo sui nodi di calcolo: clona da lì (la home su Lustre è condivisa)
-# oppure installalo nell'env base con `conda install -y git`.
-git clone https://github.com/CristianMascia/Cerberus.git ~/Cerberus
-cd ~/Cerberus
+$HOME/miniforge3/bin/conda install -n base -y git    # sul login git non c'è
+$HOME/miniforge3/bin/conda init bash && exec bash
+
+mkdir -p ~/Projects ~/containers ~/.apptainer/cache ~/.cache/huggingface/hub
+# pesi e immagini sono file da GB: distribuiti su 4 OST si leggono più in fretta
+lfs setstripe -c 4 ~/.cache/huggingface/hub
+lfs setstripe -c 4 ~/containers
+
+git clone https://github.com/CristianMascia/Cerberus.git ~/Projects/Cerberus
+cd ~/Projects/Cerberus
 conda env create -f environment.yml && conda activate cerberus
 pip install -e .
+python -m unittest discover -s test/unit
+
+# profilo sempre attivo, anche dentro srun e sbatch
+echo 'source ~/Projects/Cerberus/profiles/unina-h100.env' >> ~/.bashrc
+echo 'export PYTHONNOUSERSITE=1' >> ~/.bashrc
 ```
 
-## 2. Immagine llama.cpp per H100 (una volta, su un nodo GPU)
+`PYTHONNOUSERSITE=1` evita che pacchetti installati con `pip install --user` in
+`~/.local` finiscano negli env conda e dentro i container.
 
-La build con `--fakeroot` funziona anche senza voce in `/etc/subuid`. Va fatta
-su un nodo GPU così `nvidia-smi` rileva `9.0`; `CUDA_ARCH=90` la rende esplicita.
+## 2. Verifica del nodo e immagine llama.cpp (una volta, su un nodo GPU)
+
+Il login node non ha `apptainer`: serve una shell **su** un nodo di calcolo
+(`srun --pty`; con `salloc` la shell può restare sul login). Chiedere entrambe le
+GPU tiene altri job fuori dal nodo, perché le GPU non sono isolate tra job.
 
 ```bash
-salloc -p ingnormal -N1 --gpus-per-node=1 --cpus-per-task=10 --mem=64G --time=01:00:00
-cd ~/Cerberus/cerberus/containers
-CUDA_ARCH=90 ./build_llamacpp_local.sh llamacpp_local.def llamacpp_h100.sif
+srun -p ingnormal -N1 --gpus-per-node=2 --cpus-per-task=10 --mem=200G \
+     --time=03:00:00 --pty bash
+cd ~/Projects/Cerberus
+bash scripts/check_hpc.sh --vllm      # driver, apptainer, fakeroot, rete; poi prova vLLM
+CUDA_ARCH=90 cerberus/containers/build_llamacpp_local.sh \
+    llamacpp_local.def ~/containers/llamacpp_h100.sif
 ```
 
-I warning `xattr ... ENOTSUP` durante la build sono dovuti a Lustre e sono
-innocui. Il driver 590 (CUDA 13.1) esegue senza problemi l'immagine basata su
-CUDA 12.4.
+`check_hpc.sh` scrive un report `hpc_check_<nodo>_<data>.txt` nella cartella
+corrente. Con `--vllm` scarica anche l'immagine ufficiale `vllm/vllm-openai:v0.32.0`
+(~10 GB, in `~/cerberus-check`) e prova `vllm serve` con un modello piccolo, su
+una GPU e su due: le righe `VLLM_TP1_OK` e `VLLM_TP2_OK` dicono che il nodo è
+pronto per il backend vLLM.
+
+La build con `--fakeroot` funziona anche senza voce in `/etc/subuid`.
+`CUDA_ARCH=90` fissa l'architettura delle H100 (sm_90). I warning
+`xattr ... ENOTSUP` durante la build sono dovuti a Lustre e sono innocui. Il
+driver 590 (CUDA 13.1) esegue senza problemi l'immagine basata su CUDA 12.4.
 
 ## 3. Configurazione
 
 ```bash
-source ~/Cerberus/profiles/unina-h100.env   # CERBERUS_IMAGE, HF_HOME, thread
+source ~/Projects/Cerberus/profiles/unina-h100.env   # già nel .bashrc: CERBERUS_IMAGE, HF_HOME, thread
 ```
 
 Nel `models.conf`:
@@ -99,7 +138,6 @@ solo se il modello non entra in 92 GiB.
 cerberus validate && cerberus download
 salloc -p ingnormal -N1 --ntasks-per-node=1 --gpus-per-node=2 \
        --cpus-per-task=10 --mem=200G --time=04:00:00
-source ~/Cerberus/profiles/unina-h100.env
 cerberus up
 ```
 
