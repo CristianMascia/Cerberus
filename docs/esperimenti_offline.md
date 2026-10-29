@@ -29,8 +29,17 @@ conda env create -f envs/vllm-base.yml
 exit; exit
 ```
 
-Deve stampare `0.32.0 2.13... True`. Da qui in poi nella base non si installa
-più niente: per un pacchetto nuovo si crea un esperimento.
+Deve stampare `0.32.0 2.13... True`.
+
+In alternativa, come job batch (non serve restare collegati): crea l'env, il
+primo esperimento `exp-prova` e lancia lo smoke test.
+
+```bash
+cd ~/Projects/Cerberus && sbatch envs/setup_vllm_base.sbatch
+tail -f vllm-base-setup-<job>.out
+```
+
+Da qui in poi nella base non si installa più niente: per un pacchetto nuovo si crea un esperimento.
 
 ## 2. Nuovo esperimento
 
