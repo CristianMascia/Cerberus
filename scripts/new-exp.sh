@@ -93,6 +93,8 @@ ACT
     cat > "$exp/env.sh" <<ENV
 # source ~/experiments/$name/env.sh   (attiva venv e variabili dell'esperimento)
 source "$venv/bin/activate"
+# dopo il venv, i comandi della base (ninja, nvcc, ...) che vLLM e Triton lanciano
+export PATH="$venv/bin:$base/bin:\$PATH"
 export PYTHONNOUSERSITE=1
 export HF_HOME="\${HF_HOME:-\$HOME/.cache/huggingface}"
 export VLLM_NO_USAGE_STATS=1
