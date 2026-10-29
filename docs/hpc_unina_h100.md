@@ -17,16 +17,24 @@ llama.cpp (una `.sif` compilata per sm_90) e il profilo d'ambiente
 | Home | Lustre | Lustre (`/lustre/home/$USER`, senza quota) |
 | Python | conda | Python 3.9 di sistema, niente moduli: serve Miniforge |
 
-L'accounting di SLURM è spento, quindi non serve `--account`. Non c'è limite di
-tempo sulle partizioni.
+L'account SLURM è `allusers` ed è quello di default, quindi non serve `--account`.
+Non c'è limite di tempo sulle partizioni. La partizione di default è `normal`:
+specifica sempre `-p ingnormal`.
 
-## 1. Python (una volta, sul login node)
+Il login node (`uninahpc-ui`) non ha GPU, `apptainer`, `git` né `cmake`: va
+bene per `cerberus validate`, `download` e `batch submit`, mentre clone della
+repo, build dell'immagine e test con le GPU si fanno su un nodo di calcolo.
+
+## 1. Python e repo (una volta, sul login node)
 
 ```bash
 curl -L -o Miniforge3.sh \
   https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
 bash Miniforge3.sh -b -p $HOME/miniforge3 && rm Miniforge3.sh
 source $HOME/miniforge3/bin/activate
+# git c'è solo sui nodi di calcolo: clona da lì (la home su Lustre è condivisa)
+# oppure installalo nell'env base con `conda install -y git`.
+git clone https://github.com/CristianMascia/Cerberus.git ~/Cerberus
 cd ~/Cerberus
 conda env create -f environment.yml && conda activate cerberus
 pip install -e .
