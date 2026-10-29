@@ -58,7 +58,10 @@ curl -L -o Miniforge3.sh \
   https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
 bash Miniforge3.sh -b -p $HOME/miniforge3 && rm Miniforge3.sh
 $HOME/miniforge3/bin/conda install -n base -y git    # sul login git non c'è
-$HOME/miniforge3/bin/conda init bash && exec bash
+$HOME/miniforge3/bin/conda init bash
+# la shell di login (ssh) legge ~/.bash_profile: deve richiamare ~/.bashrc
+grep -q bashrc ~/.bash_profile 2>/dev/null || echo '[ -f ~/.bashrc ] && . ~/.bashrc' >> ~/.bash_profile
+exec bash -l
 
 mkdir -p ~/Projects ~/containers ~/.apptainer/cache ~/.cache/huggingface/hub
 # pesi e immagini sono file da GB: distribuiti su 4 OST si leggono più in fretta
@@ -67,7 +70,7 @@ lfs setstripe -c 4 ~/containers
 
 git clone https://github.com/CristianMascia/Cerberus.git ~/Projects/Cerberus
 cd ~/Projects/Cerberus
-conda env create -f environment.yml && conda activate cerberus
+conda env create -f environment.yml && conda activate cerberus   # include git
 pip install -e .
 python -m unittest discover -s test/unit
 

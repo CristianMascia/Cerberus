@@ -8,3 +8,4 @@ channels:
 dependencies:
   - python=3.11
   - pip
+  - git                    # sul login HPC UniNA git non c'è
