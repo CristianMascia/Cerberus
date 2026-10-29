@@ -219,3 +219,8 @@ all-reduce, anche con `NCCL_P2P_DISABLE=1` e `--disable-custom-all-reduce`).
 Quindi i modelli vLLM devono entrare in una H100 (per un 70B, una versione FP8).
 llama.cpp divide il modello per layer e non usa questi all-reduce, quindi
 dovrebbe funzionare anche su 2 GPU (non ancora provato su questi nodi).
+
+## 6. Esperimenti offline
+
+Per gli esperimenti con la classe `LLM` di vLLM, fuori da Cerberus (env
+`vllm-base` e un venv per esperimento): [esperimenti_offline.md](esperimenti_offline.md).

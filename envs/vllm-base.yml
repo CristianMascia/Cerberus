@@ -1,0 +1,15 @@
+# Env conda "vllm-base": vLLM per gli esperimenti offline (classe LLM), fuori da Cerberus.
+# Stessa versione dell'immagine dei server (vllm/vllm-openai:v0.32.0). Non si tocca:
+# ogni esperimento è un venv sopra questo env, creato con scripts/new-exp.sh.
+#
+#   conda env create -f envs/vllm-base.yml        # ~10 GB in ~/miniforge3/envs/vllm-base
+#
+# Guida: docs/esperimenti_offline.md
+name: vllm-base
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - vllm==0.32.0       # porta torch 2.13 (CUDA 13.0), ok col driver 590
