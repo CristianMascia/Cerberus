@@ -5,7 +5,7 @@
 # Run this from INSIDE a SLURM allocation (the tool orchestrates via srun), e.g.:
 #   conda activate cerberus
 #   salloc --partition=ingnormal --nodes=1 --ntasks-per-node=1 --gpus-per-node=2 \
-#          --cpus-per-task=32 --mem=200G --time=01:00:00
+#          --cpus-per-task=10 --mem=200G --time=01:00:00
 #   ./run_demo.sh
 #
 # --gpus-per-node is required: without it the job gets no GPU and the srun steps

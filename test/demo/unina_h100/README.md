@@ -13,7 +13,7 @@ da 16k token. Guida completa: [../../../docs/hpc_unina_h100.md](../../../docs/hp
 ```bash
 conda activate cerberus
 salloc --partition=ingnormal --nodes=1 --ntasks-per-node=1 --gpus-per-node=2 \
-       --cpus-per-task=32 --mem=200G --time=01:00:00
+       --cpus-per-task=10 --mem=200G --time=01:00:00
 ./run_demo.sh
 ```
 
