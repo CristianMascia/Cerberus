@@ -45,9 +45,19 @@ SINGULARITY="$(command -v singularity 2>/dev/null || command -v apptainer 2>/dev
 case "$(basename "$SINGULARITY")" in apptainer) ENVP=APPTAINERENV_ ;; *) ENVP=SINGULARITYENV_ ;; esac
 
 PIDS=()
+# Each server runs in its own process group (setsid): stopping it signals the whole
+# group, so vLLM's worker processes do not outlive the server.
 cleanup() {
     log "stopping servers..."
-    for pid in "${PIDS[@]:-}"; do [ -n "$pid" ] && kill "$pid" 2>/dev/null || true; done
+    local pid
+    for pid in "${PIDS[@]:-}"; do [ -n "$pid" ] && kill -TERM -- "-$pid" 2>/dev/null; done
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        alive=0
+        for pid in "${PIDS[@]:-}"; do [ -n "$pid" ] && kill -0 -- "-$pid" 2>/dev/null && alive=1; done
+        [ "$alive" = 0 ] && break
+        sleep 1
+    done
+    for pid in "${PIDS[@]:-}"; do [ -n "$pid" ] && kill -KILL -- "-$pid" 2>/dev/null; done
     wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -94,7 +104,7 @@ start_vllm() {
     [ "$kv" = fp8 ] && args+=( --kv-cache-dtype fp8 )
     [ -n "$rparser" ] && args+=( --reasoning-parser "$rparser" )
     log "start '$label' (vllm) port $port gpus $gpus tp $tp max-model-len $ctx"
-    env "${ENVP}HF_HOME=/hf" "${ENVP}HF_HUB_OFFLINE=1" \
+    setsid env "${ENVP}HF_HOME=/hf" "${ENVP}HF_HUB_OFFLINE=1" \
         "${ENVP}CUDA_VISIBLE_DEVICES=$gpus" "${ENVP}OMP_NUM_THREADS=$THREADS" \
         "${ENVP}PYTHONNOUSERSITE=1" "${ENVP}VLLM_NO_USAGE_STATS=1" \
         "$SINGULARITY" exec --nv --cleanenv \
@@ -133,12 +143,12 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
 
     log "start '$label' port $port device $device ctx $ctx"
     if [ -n "$IMAGE" ]; then
-        "$SINGULARITY" exec --nv \
+        setsid "$SINGULARITY" exec --nv \
             --bind "$HF_CACHE":/hf \
             "$IMAGE" llama-server "${srv[@]}" \
             > "$LOGDIR/$label.log" 2>&1 &
     else
-        "$SINGULARITY" exec --nv \
+        setsid "$SINGULARITY" exec --nv \
             --bind "$BIND_DIR":"$BIND_DIR" \
             --bind "$HF_CACHE":/hf \
             --env LD_LIBRARY_PATH="$BIN" \

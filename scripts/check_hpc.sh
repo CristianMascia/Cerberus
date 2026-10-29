@@ -140,7 +140,8 @@ if [ "$WITH_VLLM" = 1 ] && [ -n "$SINGBIN" ]; then
             # conviene un'istanza per GPU
             echo "# vllm serve $MODEL con tensor-parallel-size=$TP"
             LOG="$WORK/vllm_tp$TP.log"
-            "$SINGBIN" exec --nv --env HF_HOME="$HF_HOME" "$VSIF" \
+            # setsid: processo e worker di vLLM in un gruppo a sé, da chiudere insieme
+            setsid "$SINGBIN" exec --nv --env HF_HOME="$HF_HOME" "$VSIF" \
                 vllm serve "$MODEL" --port 8765 --tensor-parallel-size "$TP" \
                 --gpu-memory-utilization 0.3 --max-model-len 4096 > "$LOG" 2>&1 &
             PID=$!
@@ -158,7 +159,7 @@ if [ "$WITH_VLLM" = 1 ] && [ -n "$SINGBIN" ]; then
                 echo "VLLM_TP${TP}_FAIL — ultime righe del log:"
                 tail -40 "$LOG"
             fi
-            kill $PID 2>/dev/null; sleep 5; kill -9 $PID 2>/dev/null; wait $PID 2>/dev/null
+            kill -- -$PID 2>/dev/null; sleep 5; kill -9 -- -$PID 2>/dev/null; wait $PID 2>/dev/null
         done
     fi
 fi
