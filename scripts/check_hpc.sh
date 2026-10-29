@@ -81,8 +81,10 @@ if command -v srun >/dev/null 2>&1; then
 fi
 SINGBIN="$(command -v apptainer || command -v singularity || true)"
 if [ -n "$SINGBIN" ]; then
-    export APPTAINER_CACHEDIR="$WORK/apptainer-cache"
-    export APPTAINER_TMPDIR="$WORK/apptainer-tmp"
+    # APPTAINER_TMPDIR già impostato vince: su un disco locale (/tmp del nodo)
+    # le conversioni sono molto più veloci che su Lustre
+    export APPTAINER_CACHEDIR="${APPTAINER_CACHEDIR:-$WORK/apptainer-cache}"
+    export APPTAINER_TMPDIR="${APPTAINER_TMPDIR:-$WORK/apptainer-tmp}"
     mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
     echo
     echo "# Pull da Docker Hub + GPU dentro il container (--nv)"

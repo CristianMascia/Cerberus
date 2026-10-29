@@ -56,9 +56,11 @@ else
     echo ">> CUDA_ARCH non rilevata: uso il default del .def"
 fi
 
-# --- TMPDIR locale, per NON saturare /tmp (spesso tmpfs in RAM) --------------
-# Vive nella directory dello script (stesso filesystem della home, con spazio).
-BUILD_TMP="$SCRIPT_DIR/.build-tmp"
+# --- TMPDIR della build ------------------------------------------------------
+# Default: nella directory dello script, per NON saturare /tmp (spesso tmpfs in
+# RAM). Se APPTAINER_TMPDIR è già impostato (es. disco locale del nodo, più
+# veloce di Lustre) si usa quello.
+BUILD_TMP="${APPTAINER_TMPDIR:-$SCRIPT_DIR/.build-tmp}/llamacpp-build.$$"
 mkdir -p "$BUILD_TMP"
 export APPTAINER_TMPDIR="$BUILD_TMP"
 export SINGULARITY_TMPDIR="$BUILD_TMP"
