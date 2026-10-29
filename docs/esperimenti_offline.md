@@ -16,30 +16,26 @@ Lo schema è a due livelli:
 
 ## 1. Env base (una volta)
 
-L'installazione scarica circa 10 GB di wheel. Va fatta su un nodo di calcolo,
-con lo stesso ambiente dove poi girerà:
+L'installazione scarica circa 10 GB di wheel e va fatta **dal login node**. Sui
+nodi di calcolo pip fallisce scrivendo su Lustre (`OSError: [Errno 14] Bad
+address`), mentre dal login funziona. Ci vogliono circa 5 minuti:
 
 ```bash
-salloc -p ingnormal -N 1 --gpus-per-node=1 --cpus-per-task=10 --mem=64G --time=01:00:00
-srun --pty bash -l
 cd ~/Projects/Cerberus
 conda env create -f envs/vllm-base.yml          # solo Python 3.12
-export TMPDIR=/tmp/$USER-pip PIP_CACHE_DIR=/tmp/$USER-pip/cache   # disco locale, non Lustre
-~/miniforge3/envs/vllm-base/bin/python -m pip install -r envs/vllm-base-requirements.txt
-rm -rf /tmp/$USER-pip
-~/miniforge3/envs/vllm-base/bin/python -c \
-  "import vllm, torch; print(vllm.__version__, torch.__version__, torch.cuda.is_available())"
-exit; exit
+export TMPDIR=/tmp/$USER-pip; mkdir -p $TMPDIR  # ~6 GB al picco, poi si cancella
+~/miniforge3/envs/vllm-base/bin/python -m pip install --no-cache-dir \
+    -r envs/vllm-base-requirements.txt 2>&1 | tee ~/vllm-base-pip.log
+rm -rf /tmp/$USER-pip; unset TMPDIR
 ```
 
-Deve stampare `0.32.0 2.13... True`.
-
-In alternativa, come job batch (non serve restare collegati): crea l'env, il
-primo esperimento `exp-prova` e lancia lo smoke test.
+Poi, come job sulla GPU, la verifica, il primo esperimento `exp-prova` e lo smoke
+test (non serve restare collegati):
 
 ```bash
+~/miniforge3/envs/vllm-base/bin/hf download Qwen/Qwen2.5-0.5B-Instruct   # pesi dello smoke test, dal login
 cd ~/Projects/Cerberus && sbatch envs/setup_vllm_base.sbatch
-tail -f vllm-base-setup-<job>.out
+tail -f vllm-base-setup-<job>.out    # alla fine: "0.32.0 2.13... cuda True", una frase, "[setup] fatto"
 ```
 
 Da qui in poi nella base non si installa più niente: per un pacchetto nuovo si crea un esperimento.
@@ -84,6 +80,9 @@ lanciare il tuo script. Per lavorare in interattivo:
 
 ## Regole pratiche
 
+- **Installazioni e download dal login node.** `new-exp.sh` con pacchetti extra,
+  `pip install` nei venv e i download dei pesi vanno fatti dal login: sui nodi di
+  calcolo le scritture grosse su Lustre possono fallire con `Errno 14 Bad address`.
 - **Mai `pip install` nella base.** Un pacchetto che vuole un'altra versione di
   torch o di transformers fa fallire l'installazione nel venv: è voluto. In quel
   caso serve una seconda base (es. `vllm-base-0.33`) con il suo yml.
@@ -95,7 +94,7 @@ lanciare il tuo script. Per lavorare in interattivo:
   usa modelli che entrano in una H100, eventualmente in FP8.
 - **Pesi:** si usa la cache comune `~/.cache/huggingface`. Ciò che Cerberus ha già
   scaricato è riusato, e per i modelli nuovi fai prima
-  `huggingface-cli download <repo>` dal login node.
+  `hf download <repo>` dal login node.
 - **Cache di vLLM:** torch.compile e CUDA graph finiscono in `~/.cache/vllm`. Il
   primo avvio di un modello è lento, i successivi no.
 - **Niente `~/.local`:** `env.sh` imposta `PYTHONNOUSERSITE=1`, così pacchetti

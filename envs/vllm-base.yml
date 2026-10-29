@@ -3,9 +3,8 @@
 # ogni esperimento è un venv sopra questo env, creato con scripts/new-exp.sh.
 #
 # Qui c'è solo Python: vllm si installa dopo con pip (envs/vllm-base-requirements.txt),
-# con i file temporanei sul disco locale del nodo. Estrarre ~15 GB di wheel su
-# Lustre dentro `conda env create` è fallito con "OSError: [Errno 14] Bad address".
-# Il modo più semplice: sbatch envs/setup_vllm_base.sbatch
+# dal login node. Sui nodi di calcolo pip fallisce scrivendo su Lustre
+# ("OSError: [Errno 14] Bad address").
 #
 # Guida: docs/esperimenti_offline.md
 name: vllm-base

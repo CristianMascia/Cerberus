@@ -1,7 +1,9 @@
 #!/bin/bash
-# Crea l'env vllm-base e prova la catena degli esperimenti offline, come job batch.
+# Verifica l'env vllm-base (installato dal login node) e prova la catena degli
+# esperimenti offline sulla GPU, come job batch.
+#   ~/miniforge3/envs/vllm-base/bin/hf download Qwen/Qwen2.5-0.5B-Instruct   # login: pesi dello smoke test
 #   cd ~/Projects/Cerberus && sbatch envs/setup_vllm_base.sbatch
-# Log in vllm-base-setup-<job>.out nella cartella da cui lanci sbatch. Se l'env esiste già con vllm, salta la creazione; se è incompleto, lo ricrea.
+# Log in vllm-base-setup-<job>.out nella cartella da cui lanci sbatch.
 #SBATCH -J vllm-base-setup
 #SBATCH -p ingnormal
 #SBATCH -N 1
@@ -13,23 +15,15 @@
 
 set -euo pipefail
 REPO="${REPO:-$HOME/Projects/Cerberus}"
-CONDA="${CONDA:-$HOME/miniforge3/bin/conda}"
 BASE="$HOME/miniforge3/envs/vllm-base"
 EXP="${EXP:-exp-prova}"
 
 echo "[setup] $(date -Iseconds) su $(hostname)"
-if "$BASE/bin/python" -c "import vllm" 2>/dev/null; then
-    echo "[setup] $BASE esiste già con vllm: salto la creazione"
-else
-    # un env lasciato a metà (es. creazione interrotta) si rifà da zero
-    [ -d "$BASE" ] && { echo "[setup] $BASE incompleto: lo ricreo"; "$CONDA" env remove -y -p "$BASE"; }
-    "$CONDA" env create -f "$REPO/envs/vllm-base.yml"
-    # file temporanei e cache di pip sul disco locale del nodo, non su Lustre
-    export TMPDIR="/tmp/$USER-pip-${SLURM_JOB_ID:-$$}" PIP_CACHE_DIR="/tmp/$USER-pip-${SLURM_JOB_ID:-$$}/cache"
-    mkdir -p "$PIP_CACHE_DIR"
-    trap 'rm -rf "$TMPDIR"' EXIT
-    "$BASE/bin/python" -m pip install --log "$HOME/vllm-base-pip.log" \
-        -r "$REPO/envs/vllm-base-requirements.txt"
+if ! "$BASE/bin/python" -c "import vllm" 2>/dev/null; then
+    # sui nodi di calcolo pip fallisce scrivendo su Lustre (Errno 14 Bad address):
+    # l'env si installa dal login node, vedi docs/esperimenti_offline.md
+    echo "[setup] in $BASE manca vllm: installalo dal login node (docs/esperimenti_offline.md, punto 1)" >&2
+    exit 1
 fi
 "$BASE/bin/python" -c "import vllm, torch; print('[setup]', vllm.__version__, torch.__version__, 'cuda', torch.cuda.is_available())"
 
