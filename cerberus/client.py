@@ -82,7 +82,7 @@ class CerberusClient:
         self._project_dir = project_dir
         self._map: Optional[dict] = None
         self._sdk_clients: dict[str, Any] = {}
-        self._async_sdk_clients: dict[str, Any] = {}
+        self._async_sdk_clients: dict[tuple, Any] = {}
 
     # --- endpoint map (lazy) ------------------------------------------------ #
     def _map_path(self) -> Path:
@@ -142,18 +142,24 @@ class CerberusClient:
             )
         return self._sdk_clients[label]
 
+    def _new_async_sdk(self, label: str):
+        try:
+            from openai import AsyncOpenAI
+        except ModuleNotFoundError as exc:  # pragma: no cover
+            raise RuntimeError(
+                "the 'openai' package is required (pip install openai)"
+            ) from exc
+        return AsyncOpenAI(
+            base_url=self.endpoint(label)["base_url"], api_key="cerberus-no-auth"
+        )
+
     def _async_sdk(self, label: str):
-        if label not in self._async_sdk_clients:
-            try:
-                from openai import AsyncOpenAI
-            except ModuleNotFoundError as exc:  # pragma: no cover
-                raise RuntimeError(
-                    "the 'openai' package is required (pip install openai)"
-                ) from exc
-            self._async_sdk_clients[label] = AsyncOpenAI(
-                base_url=self.endpoint(label)["base_url"], api_key="cerberus-no-auth"
-            )
-        return self._async_sdk_clients[label]
+        # Cached per event loop: an AsyncOpenAI client's httpx pool is bound to the
+        # loop it first runs on, so reusing it after asyncio.run() returns fails.
+        key = (label, id(asyncio.get_running_loop()))
+        if key not in self._async_sdk_clients:
+            self._async_sdk_clients[key] = self._new_async_sdk(label)
+        return self._async_sdk_clients[key]
 
     # --- inference ---------------------------------------------------------- #
     def chat(
@@ -280,7 +286,6 @@ class CerberusClient:
         reasoning: None = leave the server default; True/False = best-effort ask the
         model to think / not think (via chat_template_kwargs).
         """
-        client = self._async_sdk(label)
         extra_body = dict(extra.pop("extra_body", {}) or {})
         if reasoning is not None:
             extra_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = bool(
@@ -288,19 +293,20 @@ class CerberusClient:
             )
 
         async def _run() -> list[Response]:
-            tasks = [
-                self._achat_one(
-                    client,
-                    label,
-                    msgs,
-                    extra_body=extra_body,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    extra=extra,
-                )
-                for msgs in messages
-            ]
-            return await asyncio.gather(*tasks)
+            # a fresh client per call: each asyncio.run() below is a new event loop
+            async with self._new_async_sdk(label) as client:
+                return await asyncio.gather(*[
+                    self._achat_one(
+                        client,
+                        label,
+                        msgs,
+                        extra_body=extra_body,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        extra=extra,
+                    )
+                    for msgs in messages
+                ])
 
         return asyncio.run(_run())
 
