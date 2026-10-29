@@ -1,0 +1,6 @@
+# Prompt inviati a ciascuna delle tre teste di Cerberus.
+# Un prompt per riga; righe vuote e righe che iniziano con '#' ignorate.
+
+Spiega in una frase cos'è un file GGUF.
+Scrivi una funzione Python che calcoli il fattoriale di un numero.
+Elenca tre vantaggi dell'inferenza locale rispetto alle API cloud.

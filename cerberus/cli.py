@@ -48,7 +48,7 @@ def cmd_validate(args):
           f"{len(cfg.models)} model(s)")
     if args.schema_only:
         return
-    print("[cerberus] computing GPU/VRAM needs (reads GGUF headers over HTTP)...")
+    print("[cerberus] computing GPU/VRAM needs (reads model metadata over HTTP)...")
     needs = placement.compute_needs(cfg)
     placements, n_nodes = placement.plan(needs, cfg.gpus_per_node, cfg.vram_gib)
     for p in placements:
@@ -129,7 +129,7 @@ def cmd_batch_validate(args):
         return
     from . import placement
     sub = batch.subset_config(cfg, per_model)
-    print("[cerberus] computing GPU/VRAM needs (reads GGUF headers over HTTP)...")
+    print("[cerberus] computing GPU/VRAM needs (reads model metadata over HTTP)...")
     needs = placement.compute_needs(sub)
     _, n_nodes = placement.plan(needs, sub.gpus_per_node, sub.vram_gib)
     print(f"[cerberus] each shard needs {n_nodes} node(s) x {sub.gpus_per_node} GPU(s)")

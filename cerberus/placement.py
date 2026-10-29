@@ -10,8 +10,9 @@ allocation of `nodes x gpus_per_node` GPUs of `vram_gib` GiB each
   * single-GPU models pack onto GPUs and may SHARE one when their footprints sum
     to <= vram_gib (first-fit-decreasing).
 
-`compute_needs()` (network: reads GGUF headers) turns a Config into per-model
-needs; `plan()` is pure and does the packing so it can be tested offline.
+`compute_needs()` (network: reads GGUF headers, or safetensors sizes and
+config.json for vllm models) turns a Config into per-model needs; a vllm model's
+footprint is its whole GPUs, since vLLM preallocates them; `plan()` is pure and does the packing so it can be tested offline.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .config import DEFAULT_VRAM_GIB, Config, ModelSpec
-from . import vram
+from . import vram, vllm_backend
 
 VRAM_GIB = DEFAULT_VRAM_GIB  # kept for callers that import it
 
@@ -50,7 +51,7 @@ class PlacementError(Exception):
 
 def compute_needs(config: Config, vram_gib: float | None = None,
                   token: str | None = None) -> list[ModelNeed]:
-    """Resolve each model's GPU count + footprint (reads GGUF headers over HTTP).
+    """Resolve each model's GPU count + footprint (reads model metadata over HTTP).
 
     `vram_gib` defaults to the config's [allocation] vram_gib.
     """
@@ -58,9 +59,12 @@ def compute_needs(config: Config, vram_gib: float | None = None,
         vram_gib = config.vram_gib
     needs = []
     for m in config.models:
-        n_gpus, est = vram.required_gpus(m, config.gpus_per_node, vram_gib, token)
-        needs.append(ModelNeed(spec=m, num_gpus=n_gpus,
-                               footprint_gib=vram.footprint_gib(est)))
+        if m.is_vllm:
+            n_gpus, fp = vllm_backend.required_gpus(m, config.gpus_per_node, vram_gib, token)
+        else:
+            n_gpus, est = vram.required_gpus(m, config.gpus_per_node, vram_gib, token)
+            fp = vram.footprint_gib(est)
+        needs.append(ModelNeed(spec=m, num_gpus=n_gpus, footprint_gib=fp))
     return needs
 
 

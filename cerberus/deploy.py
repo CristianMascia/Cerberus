@@ -33,6 +33,7 @@ from pathlib import Path
 from .config import Config
 from . import placement
 from .download import resolve_local_gguf
+from .vllm_backend import resolve_local_snapshot
 
 _HERE = Path(__file__).resolve().parent
 NODE_LAUNCH = _HERE / "node_launch.sh"
@@ -46,6 +47,7 @@ def _settings() -> dict:
     home = os.path.expanduser("~")
     return {
         "image": _env("CERBERUS_IMAGE", ""),  # .sif with llama-server inside (wins)
+        "vllm_image": _env("CERBERUS_VLLM_IMAGE", ""),  # .sif with `vllm serve` inside
         "sandbox": _env("CERBERUS_SANDBOX", f"{home}/tools/cuda-build"),
         "bin": _env("CERBERUS_BIN", f"{home}/tools/llama.cpp-master/build/bin"),
         "bind": _env("CERBERUS_BIND", f"{home}/tools"),
@@ -57,6 +59,8 @@ def _settings() -> dict:
         "port_max": _env("CERBERUS_PORT_MAX", "8999"),
         "srun_gres": _env("CERBERUS_SRUN_GRES", ""),  # e.g. "--gpus-per-node=3"
         "health_timeout": int(_env("CERBERUS_HEALTH_TIMEOUT", "600")),
+        # vLLM compiles (torch.compile) and captures CUDA graphs at first start
+        "health_timeout_vllm": int(_env("CERBERUS_HEALTH_TIMEOUT_VLLM", "1500")),
     }
 
 
@@ -77,10 +81,38 @@ def _container_path(host_path: Path, hf_cache: str) -> str:
     return f"/hf/{rel}"
 
 
+def plan_row(p: placement.Placed, hf_cache: str) -> str:
+    """One plan.tsv line for node_launch.sh.
+
+    columns: node, label, model_container, device, ctx, parallel, kv, reasoning,
+             reasoning_format, reasoning_budget, backend, num_gpus,
+             gpu_memory_utilization, reasoning_parser
+    Empty values are written as "-": `read` with a tab IFS merges empty fields.
+    """
+    s = p.spec
+    if s.is_vllm:
+        host_path = resolve_local_snapshot(s, hf_cache)
+        what = "snapshot"
+    else:
+        host_path = resolve_local_gguf(s, hf_cache)
+        what = "GGUF"
+    if host_path is None:
+        raise RuntimeError(f"{what} for '{s.label}' not in cache — run 'cerberus download' first")
+    cols = [
+        p.node_idx, s.label, _container_path(host_path, hf_cache), p.device_arg,
+        s.ctx_size, s.parallel, s.kv_cache_type, s.reasoning, s.reasoning_format,
+        s.reasoning_budget, s.backend, p.num_gpus, s.gpu_memory_utilization,
+        s.reasoning_parser,
+    ]
+    return "\t".join("-" if c is None or c == "" else str(c) for c in cols)
+
+
 def _health_ok(host: str, port: int) -> bool:
+    # llama.cpp: 200 {"status":"ok"} (503 while loading); vLLM: 200 with an empty body.
     try:
         with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=3) as r:
-            return b'"ok"' in r.read()
+            body = r.read().strip()
+            return r.status == 200 and (not body or b'"ok"' in body)
     except Exception:
         return False
 
@@ -131,24 +163,15 @@ def start(config: Config, project_dir: Path, token: str | None = None,
     parts.write_text("")  # truncate
     with plan_tsv.open("w") as fh:
         for p in placements:
-            host_gguf = resolve_local_gguf(p.spec, st["hf_cache"])
-            if host_gguf is None:
-                raise RuntimeError(
-                    f"GGUF for '{p.spec.label}' not in cache — run 'cerberus download' first"
-                )
-            container = _container_path(host_gguf, st["hf_cache"])
-            rb = p.spec.reasoning_budget if p.spec.reasoning_budget is not None else ""
-            # columns: node, label, gguf_container, device, ctx, parallel, kv, reasoning, reasoning_format, reasoning_budget
-            fh.write("\t".join(str(x) for x in [
-                p.node_idx, p.spec.label, container, p.device_arg, p.spec.ctx_size,
-                p.spec.parallel, p.spec.kv_cache_type, p.spec.reasoning,
-                p.spec.reasoning_format, rb,
-            ]) + "\n")
+            fh.write(plan_row(p, st["hf_cache"]) + "\n")
+    if any(p.spec.is_vllm for p in placements) and not st["vllm_image"]:
+        raise RuntimeError("vllm models need CERBERUS_VLLM_IMAGE (the vLLM .sif); "
+                           "see docs/hpc_unina_h100.md")
 
     # export settings for node_launch (srun propagates the environment)
     child_env = dict(os.environ)
     child_env.update({
-        "CERBERUS_IMAGE": st["image"],
+        "CERBERUS_IMAGE": st["image"], "CERBERUS_VLLM_IMAGE": st["vllm_image"],
         "CERBERUS_SANDBOX": st["sandbox"], "CERBERUS_BIN": st["bin"],
         "CERBERUS_BIND": st["bind"], "HF_CACHE": st["hf_cache"],
         "CERBERUS_NGL": st["ngl"], "CERBERUS_THREADS": st["threads"],
@@ -173,8 +196,11 @@ def start(config: Config, project_dir: Path, token: str | None = None,
         dep.procs.append(subprocess.Popen(cmd, env=child_env, stdout=srun_log, stderr=srun_log))
 
     # 5. wait for every model to report host:port and become healthy
+    timeout = st["health_timeout"]
+    if any(p.spec.is_vllm for p in placements):
+        timeout = max(timeout, st["health_timeout_vllm"])
     try:
-        dep.endpoints = _await_ready(placements, nodes, parts, st["health_timeout"], logdir)
+        dep.endpoints = _await_ready(placements, nodes, parts, timeout, logdir)
     except BaseException:
         stop(dep)
         raise
@@ -232,6 +258,7 @@ def _await_ready(placements, nodes, parts: Path, timeout: int, logdir: Path) -> 
     """Poll endpoints.parts until every model reports a port and passes /health."""
     want = {p.spec.label for p in placements}
     reasoning_of = {p.spec.label: p.spec.reasoning for p in placements}
+    backend_of = {p.spec.label: p.spec.backend for p in placements}
     reported: dict[str, tuple[str, int]] = {}
     waited = 0
     while True:
@@ -246,6 +273,7 @@ def _await_ready(placements, nodes, parts: Path, timeout: int, logdir: Path) -> 
                     "base_url": f"http://{healthy[lbl][0]}:{healthy[lbl][1]}/v1",
                     "host": healthy[lbl][0], "port": healthy[lbl][1],
                     "reasoning": reasoning_of[lbl] != "off",
+                    "backend": backend_of[lbl],
                 }
                 for lbl in want
             }

@@ -2,7 +2,8 @@
 Cerberus — model download.
 
 Fetches, for each model in the config, exactly the declared GGUF file (and, for
-split GGUFs, all of its parts) into the shared Hugging Face cache. Runs on the
+split GGUFs, all of its parts) into the shared Hugging Face cache; for vllm
+models, the snapshot of safetensors, configs and tokenizer. Runs on the
 login node (the only one with external network). Auth via the `HF_TOKEN` set in
 the `cerberus` conda env; needed only for gated repos.
 
@@ -17,6 +18,7 @@ import re
 from pathlib import Path
 
 from .config import Config, ModelSpec
+from . import vllm_backend
 
 _SPLIT_RE = re.compile(r"^(?P<base>.+)-(?P<idx>\d{5})-of-(?P<total>\d{5})\.gguf$")
 
@@ -46,6 +48,11 @@ def download_models(config: Config, token: str | None = None) -> dict[str, list[
     token = token or os.environ.get("HF_TOKEN")
     out: dict[str, list[str]] = {}
     for spec in config.models:
+        if spec.is_vllm:
+            print(f"[cerberus] download {spec.label}: {spec.hf_repo} "
+                  f"(safetensors, revision {spec.revision or 'main'})")
+            out[spec.label] = [vllm_backend.download(spec, token)]
+            continue
         paths = []
         for fname in _files_to_fetch(spec):
             print(f"[cerberus] download {spec.label}: {spec.hf_repo}/{fname}")

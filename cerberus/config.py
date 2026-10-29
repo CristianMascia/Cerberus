@@ -21,7 +21,15 @@ except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore
 
 ALLOC_MODES = ("AUTO", "MANUAL")
+# llamacpp: GGUF served by llama-server; vllm: safetensors served by `vllm serve`.
+BACKENDS = ("llamacpp", "vllm")
 KV_CACHE_TYPES = ("f16", "q8_0", "q4_0")
+# vLLM --kv-cache-dtype: 'f16' keeps the model dtype (vLLM's 'auto'), 'fp8' halves the KV.
+VLLM_KV_CACHE_TYPES = ("f16", "fp8")
+# vLLM runs many sequences per GPU: used when the [[model]] table sets no `parallel`
+# ([defaults] parallel is a llama.cpp slot count and does not apply to vLLM).
+VLLM_DEFAULT_PARALLEL = 64
+VLLM_DEFAULT_GPU_MEMORY_UTILIZATION = 0.90
 REASONING_MODES = ("on", "off", "auto")
 # llama.cpp --reasoning-format: how the server separates thinking from the answer.
 # 'deepseek' (default) parses <think>…</think>; 'auto' lets llama.cpp pick per model
@@ -40,7 +48,7 @@ class ConfigError(Exception):
 class ModelSpec:
     label: str
     hf_repo: str
-    gguf_file: str
+    gguf_file: str                  # llamacpp only ("" for vllm)
     alloc_mode: str                 # AUTO | MANUAL
     max_input_tokens: int
     max_output_tokens: int
@@ -50,11 +58,21 @@ class ModelSpec:
     reasoning_format: str = "deepseek"  # llama.cpp --reasoning-format (see REASONING_FORMATS)
     reasoning_budget: Optional[int] = None
     num_gpus: Optional[int] = None  # required for MANUAL, ignored for AUTO
+    backend: str = "llamacpp"       # llamacpp | vllm
+    revision: Optional[str] = None  # vllm: HF branch/tag/commit (default: main)
+    gpu_memory_utilization: float = VLLM_DEFAULT_GPU_MEMORY_UTILIZATION  # vllm
+    reasoning_parser: Optional[str] = None  # vllm --reasoning-parser (e.g. qwen3)
+
+    @property
+    def is_vllm(self) -> bool:
+        return self.backend == "vllm"
 
     @property
     def ctx_size(self) -> int:
-        """Total llama.cpp --ctx-size: each of `parallel` slots gets in+out tokens."""
-        return (self.max_input_tokens + self.max_output_tokens) * self.parallel
+        """llama.cpp: total --ctx-size, each of `parallel` slots gets in+out tokens.
+        vLLM: --max-model-len, the length of ONE sequence (KV is paged and shared)."""
+        per_seq = self.max_input_tokens + self.max_output_tokens
+        return per_seq if self.is_vllm else per_seq * self.parallel
 
     @property
     def is_split_name(self) -> bool:
@@ -107,8 +125,22 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
     label = _require(t, "label", where, str)
     where = f"model '{label}'"
 
+    backend = str(t.get("backend", defaults.get("backend", "llamacpp")))
+    if backend not in BACKENDS:
+        raise ConfigError(f"{where}: backend must be one of {BACKENDS}")
+    vllm = backend == "vllm"
+
     hf_repo = _require(t, "hf_repo", where, str)
-    gguf_file = _require(t, "gguf_file", where, str)
+    if vllm:
+        if "gguf_file" in t:
+            raise ConfigError(f"{where}: 'gguf_file' is for llamacpp; vllm serves the "
+                              "safetensors of hf_repo")
+        gguf_file = ""
+    else:
+        gguf_file = _require(t, "gguf_file", where, str)
+        for key in ("revision", "gpu_memory_utilization", "reasoning_parser"):
+            if key in t:
+                raise ConfigError(f"{where}: '{key}' is only for backend = \"vllm\"")
 
     alloc_mode = _require(t, "alloc_mode", where, str).upper()
     if alloc_mode not in ALLOC_MODES:
@@ -119,13 +151,18 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
     if max_in <= 0 or max_out <= 0:
         raise ConfigError(f"{where}: max_input_tokens/max_output_tokens must be > 0")
 
-    parallel = int(t.get("parallel", defaults.get("parallel", 1)))
+    if vllm:
+        parallel = int(t.get("parallel", VLLM_DEFAULT_PARALLEL))
+    else:
+        parallel = int(t.get("parallel", defaults.get("parallel", 1)))
     if parallel < 1:
         raise ConfigError(f"{where}: parallel must be >= 1")
 
     kv = str(t.get("kv_cache_type", defaults.get("kv_cache_type", "f16")))
-    if kv not in KV_CACHE_TYPES:
-        raise ConfigError(f"{where}: kv_cache_type must be one of {KV_CACHE_TYPES}")
+    allowed_kv = VLLM_KV_CACHE_TYPES if vllm else KV_CACHE_TYPES
+    if kv not in allowed_kv:
+        raise ConfigError(f"{where}: kv_cache_type must be one of {allowed_kv} "
+                          f"for backend {backend}")
 
     reasoning = str(t.get("reasoning", defaults.get("reasoning", "auto")))
     if reasoning not in REASONING_MODES:
@@ -141,6 +178,18 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
     if reasoning_budget is not None and (not isinstance(reasoning_budget, int)
                                          or isinstance(reasoning_budget, bool)):
         raise ConfigError(f"{where}: reasoning_budget must be an integer")
+    if vllm and reasoning_budget is not None:
+        raise ConfigError(f"{where}: reasoning_budget is not supported by vllm")
+
+    revision = t.get("revision")
+    if revision is not None and not isinstance(revision, str):
+        raise ConfigError(f"{where}: revision must be a string")
+    gmu = t.get("gpu_memory_utilization", VLLM_DEFAULT_GPU_MEMORY_UTILIZATION)
+    if isinstance(gmu, bool) or not isinstance(gmu, (int, float)) or not 0 < gmu <= 1:
+        raise ConfigError(f"{where}: gpu_memory_utilization must be a number in (0, 1]")
+    reasoning_parser = t.get("reasoning_parser")
+    if reasoning_parser is not None and not isinstance(reasoning_parser, str):
+        raise ConfigError(f"{where}: reasoning_parser must be a string")
 
     num_gpus = t.get("num_gpus")
     if alloc_mode == "MANUAL":
@@ -156,7 +205,9 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
         label=label, hf_repo=hf_repo, gguf_file=gguf_file, alloc_mode=alloc_mode,
         max_input_tokens=max_in, max_output_tokens=max_out, parallel=parallel,
         kv_cache_type=kv, reasoning=reasoning, reasoning_format=reasoning_format,
-        reasoning_budget=reasoning_budget, num_gpus=num_gpus,
+        reasoning_budget=reasoning_budget, num_gpus=num_gpus, backend=backend,
+        revision=revision, gpu_memory_utilization=float(gmu),
+        reasoning_parser=reasoning_parser,
     )
 
 
@@ -238,5 +289,5 @@ if __name__ == "__main__":  # quick manual check: python -m cerberus.config <fil
     print(f"gpus_per_node={cfg.gpus_per_node}, vram_gib={cfg.vram_gib:g}, "
           f"{len(cfg.models)} models")
     for m in cfg.models:
-        print(f"  {m.label}: {m.alloc_mode} ctx={m.ctx_size} reasoning={m.reasoning} "
+        print(f"  {m.label}: {m.backend} {m.alloc_mode} ctx={m.ctx_size} reasoning={m.reasoning} "
               f"num_gpus={m.num_gpus}")

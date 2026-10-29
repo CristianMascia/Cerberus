@@ -264,7 +264,7 @@ def prepare(cfg: Config, input_path: str | Path, batch_dir: Path, *,
     needs, n_nodes = None, None
     if estimate:
         from . import placement
-        print("[cerberus] computing GPU/VRAM needs (reads GGUF headers over HTTP)...")
+        print("[cerberus] computing GPU/VRAM needs (reads model metadata over HTTP)...")
         need_objs = placement.compute_needs(sub, token=token)
         placements, n_nodes = placement.plan(need_objs, sub.gpus_per_node, sub.vram_gib)
         needs = [{"label": n.spec.label, "num_gpus": n.num_gpus,

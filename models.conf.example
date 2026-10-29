@@ -57,3 +57,17 @@ max_input_tokens  = 4096
 max_output_tokens = 512
 parallel          = 4
 reasoning         = "off"
+
+# vLLM: backend = "vllm" serves the safetensors of hf_repo with `vllm serve`
+# (needs CERBERUS_VLLM_IMAGE, the vLLM .sif). The model takes WHOLE GPUs;
+# parallel = concurrent sequences (default 64), in + out = one sequence's length.
+# [[model]]
+# label             = "qwen3-8b"
+# backend           = "vllm"
+# hf_repo           = "Qwen/Qwen3-8B"
+# alloc_mode        = "AUTO"
+# parallel          = 64
+# max_input_tokens  = 12288
+# max_output_tokens = 4096
+# reasoning_parser  = "qwen3"            # vllm --reasoning-parser
+# kv_cache_type     = "fp8"              # f16 | fp8

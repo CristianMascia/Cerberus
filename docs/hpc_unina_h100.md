@@ -143,3 +143,59 @@ cerberus up
 
 La batch API (`cerberus batch submit`) usa `partition` e `cpus_per_task` della
 sezione `[batch]`. La demo completa è in `test/demo/unina_h100/`.
+
+## 5. Backend vLLM
+
+Accanto a llama.cpp, un modello può essere servito da vLLM con
+`backend = "vllm"` nel suo `[[model]]`. Cerberus lancia `vllm serve` dentro
+l'immagine ufficiale, sullo snapshot safetensors scaricato da `cerberus download`.
+Endpoints, client e batch API restano gli stessi, e i due backend si possono
+mescolare nello stesso `cerberus up` o batch.
+
+L'immagine è quella ufficiale, senza build. Se hai già lanciato
+`check_hpc.sh --vllm`, basta spostare quella:
+
+```bash
+mv ~/cerberus-check/vllm_v0.32.0.sif ~/containers/vllm-0.32.0.sif
+# oppure, su un nodo di calcolo:
+# apptainer pull ~/containers/vllm-0.32.0.sif docker://vllm/vllm-openai:v0.32.0
+```
+
+Il profilo la cerca in `CERBERUS_VLLM_IMAGE` (default
+`~/containers/vllm-0.32.0.sif`). La v0.32.0 usa CUDA 13.0, che il driver 590
+esegue; da evitare le nightly `cu134-*`.
+
+```toml
+[[model]]
+label             = "qwen3-8b"
+backend           = "vllm"
+hf_repo           = "Qwen/Qwen3-8B"     # safetensors, non GGUF (niente gguf_file)
+# revision        = "<commit>"          # opzionale: fissa i pesi
+alloc_mode        = "AUTO"              # o MANUAL con num_gpus = tensor parallel
+parallel          = 64                  # --max-num-seqs (default 64)
+max_input_tokens  = 12288               # in + out = --max-model-len (UNA sequenza)
+max_output_tokens = 4096
+# kv_cache_type   = "fp8"               # f16 (default) | fp8
+# gpu_memory_utilization = 0.90
+reasoning_parser  = "qwen3"             # --reasoning-parser
+```
+
+Differenze rispetto a llama.cpp:
+
+- vLLM prealloca `gpu_memory_utilization` della VRAM, quindi un modello vLLM
+  occupa GPU **intere** e non le condivide. AUTO sceglie il numero di GPU
+  (tensor parallel) dai safetensors e dal KV di una sequenza completa. Senza
+  NVLink, due modelli da una GPU rendono più di uno su due.
+- `parallel` è il numero di sequenze servite in contemporanea e vale anche come
+  concorrenza della batch API per quel modello. Il `parallel` di `[defaults]` è
+  uno slot di llama.cpp e per vLLM non vale.
+- `reasoning_format` e `reasoning_budget` sono solo di llama.cpp. Per i modelli
+  con thinking si usa `reasoning_parser`. `enable_thinking` dal client funziona
+  uguale, e `repeat_penalty` viene tradotto in `repetition_penalty`.
+- Il primo avvio richiede qualche minuto (torch.compile e CUDA graph, poi in
+  cache in `~/.cache/vllm`). Cerberus aspetta fino a
+  `CERBERUS_HEALTH_TIMEOUT_VLLM` secondi (default 1500).
+- Il container parte con `--cleanenv`, con `HF_HUB_OFFLINE=1` e solo le GPU
+  assegnate: i pesi devono essere già in cache (`cerberus download`).
+
+Demo con i due backend insieme: `test/demo/unina_h100_vllm/`.

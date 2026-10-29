@@ -2,8 +2,8 @@
 #
 # Cerberus — per-node launcher (run via srun from deploy.py on each node).
 #
-# Reads the plan, starts this node's llama.cpp servers inside the CUDA sandbox
-# (each on a free port, bound to 0.0.0.0), reports "label<TAB>host<TAB>port" back
+# Reads the plan, starts this node's servers (llama-server, or `vllm serve` from
+# the vLLM .sif for backend=vllm; each on a free port, bound to 0.0.0.0), reports "label<TAB>host<TAB>port" back
 # to the shared endpoints file, then waits (keeping the srun step, and thus the
 # servers, alive) until the step is killed.
 #
@@ -22,6 +22,7 @@ PARTS="${3:?missing endpoints.parts}"
 #                          (cerberus/containers/llamacpp_local.def, e.g. on H100);
 #   otherwise           -> CUDA sandbox + llama.cpp binaries on the host (IBiSCo).
 IMAGE="${CERBERUS_IMAGE:-}"
+VLLM_IMAGE="${CERBERUS_VLLM_IMAGE:-}"
 SANDBOX="${CERBERUS_SANDBOX:-$HOME/tools/cuda-build}"
 BIN="${CERBERUS_BIN:-$HOME/tools/llama.cpp-master/build/bin}"
 BIND_DIR="${CERBERUS_BIND:-$HOME/tools}"
@@ -40,6 +41,8 @@ log() { echo "[node $NODE_IDX @ $HOST] $*"; }
 SINGULARITY="$(command -v singularity 2>/dev/null || command -v apptainer 2>/dev/null || true)"
 [ -n "$SINGULARITY" ] || { log "ERROR: singularity/apptainer not found on this node"; exit 1; }
 [ -z "$IMAGE" ] || [ -f "$IMAGE" ] || { log "ERROR: CERBERUS_IMAGE '$IMAGE' not found"; exit 1; }
+# Env vars that reach the container through --cleanenv: APPTAINERENV_X / SINGULARITYENV_X.
+case "$(basename "$SINGULARITY")" in apptainer) ENVP=APPTAINERENV_ ;; *) ENVP=SINGULARITYENV_ ;; esac
 
 PIDS=()
 cleanup() {
@@ -66,11 +69,58 @@ else:
 PY
 }
 
+# "CUDA0,CUDA1" (logical GPUs of this step) -> physical ids for CUDA_VISIBLE_DEVICES,
+# through the step's own CUDA_VISIBLE_DEVICES when SLURM set one.
+cuda_devices() {
+    local vis=() out=() d i
+    IFS=, read -ra vis <<< "${CUDA_VISIBLE_DEVICES:-}"
+    for d in ${1//,/ }; do
+        i="${d#CUDA}"
+        out+=("${vis[$i]:-$i}")
+    done
+    (IFS=,; echo "${out[*]}")
+}
+
+# backend=vllm: `vllm serve` on the cached snapshot, one process per model,
+# tensor-parallel over its GPUs. --cleanenv keeps the host's LD_LIBRARY_PATH,
+# PYTHONPATH and conda variables out of the container (CUDA conflicts).
+start_vllm() {
+    local gpus; gpus="$(cuda_devices "$device")"
+    local args=( vllm serve "$container" --served-model-name "$label"
+                 --host 0.0.0.0 --port "$port"
+                 --tensor-parallel-size "$tp"
+                 --gpu-memory-utilization "$gmu"
+                 --max-model-len "$ctx" --max-num-seqs "$parallel" )
+    [ "$kv" = fp8 ] && args+=( --kv-cache-dtype fp8 )
+    [ -n "$rparser" ] && args+=( --reasoning-parser "$rparser" )
+    log "start '$label' (vllm) port $port gpus $gpus tp $tp max-model-len $ctx"
+    env "${ENVP}HF_HOME=/hf" "${ENVP}HF_HUB_OFFLINE=1" \
+        "${ENVP}CUDA_VISIBLE_DEVICES=$gpus" "${ENVP}OMP_NUM_THREADS=$THREADS" \
+        "${ENVP}PYTHONNOUSERSITE=1" "${ENVP}VLLM_NO_USAGE_STATS=1" \
+        "$SINGULARITY" exec --nv --cleanenv \
+        --bind "$HF_CACHE":/hf \
+        "$VLLM_IMAGE" "${args[@]}" \
+        > "$LOGDIR/$label.log" 2>&1 &
+}
+
 started=0
-while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget; do
+while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget backend tp gmu rparser; do
     [ "$node" = "$NODE_IDX" ] || continue
+    # deploy.py writes "-" for empty columns (a tab IFS would merge empty fields)
+    [ "$rbudget" = - ] && rbudget=""
+    [ "${rparser:--}" = - ] && rparser=""
 
     port="$(free_port)" || { log "no free port for $label"; continue; }
+
+    if [ "${backend:-llamacpp}" = vllm ]; then
+        [ -n "$VLLM_IMAGE" ] && [ -f "$VLLM_IMAGE" ] \
+            || { log "ERROR: CERBERUS_VLLM_IMAGE '$VLLM_IMAGE' not found"; exit 1; }
+        start_vllm
+        PIDS+=("$!")
+        printf '%s\t%s\t%s\t%s\n' "$label" "$HOST" "$port" "$reasoning" >> "$PARTS"
+        started=$((started + 1))
+        continue
+    fi
 
     srv=( -m "$container" -dev "$device"
           -ngl "$NGL" --fit off

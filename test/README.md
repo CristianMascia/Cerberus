@@ -13,7 +13,8 @@ python -m unittest discover -s test/unit -v
 Coprono: parsing/validazione di `models.conf` (`cerberus.config`), bin-packing del
 posizionamento (`cerberus.placement`), separazione del reasoning e risoluzione
 della mappa endpoint (`cerberus.client`), espansione dei GGUF spezzati
-(`cerberus.download`), batch API: parsing, split, ripresa e merge (`cerberus.batch`).
+(`cerberus.download`), batch API: parsing, split, ripresa e merge (`cerberus.batch`),
+backend vLLM: config, stima delle GPU, riga del piano, health e client (`test_vllm.py`).
 
 ## `demo/` — test d'integrazione (su IBiSCo)
 Demo eseguibili end-to-end che usano il tool completo (allocazione, avvio dei

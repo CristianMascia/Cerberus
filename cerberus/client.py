@@ -62,6 +62,18 @@ def _split_thinking(
     return None, content.strip()
 
 
+def _reasoning_field(msg: Any) -> Optional[str]:
+    """The thinking trace: `reasoning_content` (llama.cpp, older vLLM) or `reasoning`
+    (newer vLLM)."""
+    for name in ("reasoning_content", "reasoning"):
+        val = getattr(msg, name, None)
+        if val is None and getattr(msg, "model_extra", None):
+            val = msg.model_extra.get(name)
+        if val is not None:
+            return val
+    return None
+
+
 class CerberusClient:
     def __init__(
         self, endpoints_path: Optional[str] = None, project_dir: Optional[str] = None
@@ -108,6 +120,13 @@ class CerberusClient:
         if label not in models:
             raise KeyError(f"unknown model label '{label}'; have {list(models)}")
         return models[label]
+
+    def _adapt_body(self, label: str, extra_body: dict) -> dict:
+        """Translate llama.cpp-only sampling names for vLLM endpoints."""
+        if self.endpoint(label).get("backend") == "vllm" and "repeat_penalty" in extra_body:
+            extra_body = dict(extra_body)
+            extra_body.setdefault("repetition_penalty", extra_body.pop("repeat_penalty"))
+        return extra_body
 
     # --- OpenAI SDK per model ---------------------------------------------- #
     def _sdk(self, label: str):
@@ -166,7 +185,7 @@ class CerberusClient:
             temperature=temperature,
             max_tokens=max_tokens,
             stream=stream,
-            extra_body=extra_body or None,
+            extra_body=self._adapt_body(label, extra_body) or None,
             **extra,
         )
         if stream:  # advanced use: hand back the raw stream
@@ -175,10 +194,7 @@ class CerberusClient:
         choice = resp.choices[0]
         msg = choice.message
         raw_content = msg.content or ""
-        reasoning_content = getattr(msg, "reasoning_content", None)
-        if reasoning_content is None and getattr(msg, "model_extra", None):
-            reasoning_content = msg.model_extra.get("reasoning_content")
-        trace, answer = _split_thinking(raw_content, reasoning_content)
+        trace, answer = _split_thinking(raw_content, _reasoning_field(msg))
         return Response(
             content=answer,
             reasoning=trace,
@@ -202,16 +218,13 @@ class CerberusClient:
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            extra_body=extra_body or None,
+            extra_body=self._adapt_body(label, extra_body) or None,
             **extra,
         )
         choice = resp.choices[0]
         msg = choice.message
         raw_content = msg.content or ""
-        reasoning_content = getattr(msg, "reasoning_content", None)
-        if reasoning_content is None and getattr(msg, "model_extra", None):
-            reasoning_content = msg.model_extra.get("reasoning_content")
-        trace, answer = _split_thinking(raw_content, reasoning_content)
+        trace, answer = _split_thinking(raw_content, _reasoning_field(msg))
         return Response(
             content=answer,
             reasoning=trace,
