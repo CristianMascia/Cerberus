@@ -124,6 +124,7 @@ class Deployment:
     rundir: Path
     endpoints: dict
     procs: list = field(default_factory=list)
+    stopped: bool = False
 
     def alive(self) -> bool:
         return all(pr.poll() is None for pr in self.procs)
@@ -208,7 +209,10 @@ def start(config: Config, project_dir: Path, token: str | None = None,
 
 
 def stop(dep: Deployment) -> None:
-    """Stop the srun steps (and thus the servers) of a deployment."""
+    """Stop the srun steps (and thus the servers) of a deployment. Idempotent."""
+    if dep.stopped:  # the signal handler and up()'s finally both get here
+        return
+    dep.stopped = True
     print("\n[cerberus] tearing down (stopping srun steps)...")
     for pr in dep.procs:
         if pr.poll() is None:
