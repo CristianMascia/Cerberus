@@ -149,10 +149,10 @@ class TestPlan(unittest.TestCase):
             self.assertEqual(resolve_local_snapshot(q, hf), snap)
             self.assertIsNone(resolve_local_snapshot(vspec(revision="v2"), hf))
             row = plan_row(Placed(q, 0, [0, 1], 2, 184.0), hf).split("\t")
-            self.assertEqual(len(row), 14)                 # nessun campo vuoto
+            self.assertEqual(len(row), 15)                 # nessun campo vuoto
             self.assertEqual(row[2], f"/hf/hub/models--Qwen--Qwen3-8B/snapshots/{'a' * 40}")
             self.assertEqual(row[3:6], ["CUDA0,CUDA1", "10000", "128"])
-            self.assertEqual(row[9:], ["-", "vllm", "2", "0.9", "-"])
+            self.assertEqual(row[9:], ["-", "vllm", "2", "0.9", "-", "q"])
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):

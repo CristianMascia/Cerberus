@@ -83,18 +83,18 @@ async def one(client, model: str, prompt: str, max_tokens: int, extra: dict) -> 
             "tpot": (e2e - ttft) / (out - 1) if ttft is not None and out > 1 else None}
 
 
-async def level(client, model, prompts, conc, max_tokens, extra) -> dict:
+async def level(clients, model, prompts, conc, max_tokens, extra) -> dict:
     sem = asyncio.Semaphore(conc)
 
-    async def guarded(p):
+    async def guarded(i, p):
         async with sem:
-            try:
-                return await one(client, model, p, max_tokens, extra)
+            try:  # with replicas, request i goes to server i % N (like CerberusClient)
+                return await one(clients[i % len(clients)], model, p, max_tokens, extra)
             except Exception as exc:  # noqa: BLE001 - un errore conta, non ferma il livello
                 return {"error": f"{type(exc).__name__}: {exc}"[:200]}
 
     t0 = time.perf_counter()
-    res = await asyncio.gather(*(guarded(p) for p in prompts))
+    res = await asyncio.gather(*(guarded(i, p) for i, p in enumerate(prompts)))
     wall = time.perf_counter() - t0
     ok = [r for r in res if "error" not in r]
     errs = [r["error"] for r in res if "error" in r]
@@ -150,27 +150,30 @@ async def run(args) -> None:
 
     ep = load_endpoint(args.endpoints, args.model)
     backend = ep.get("backend", "llamacpp")  # endpoints.json vecchi: solo llama.cpp
-    client = AsyncOpenAI(base_url=ep["base_url"], api_key="cerberus-no-auth",
-                         timeout=args.timeout, max_retries=0)
+    urls = [r["base_url"] for r in ep.get("replicas") or []] or [ep["base_url"]]
+    clients = [AsyncOpenAI(base_url=u, api_key="cerberus-no-auth",
+                           timeout=args.timeout, max_retries=0) for u in urls]
     extra = {"chat_template_kwargs": {"enable_thinking": args.thinking}}
     if not args.allow_eos:
         extra["ignore_eos"] = True  # stessa lunghezza d'uscita su entrambi i backend
     concs = [int(c) for c in args.concurrency.split(",")]
 
-    print(f"[bench] {args.model} ({backend}) su {ep['base_url']}; "
+    print(f"[bench] {args.model} ({backend}) su {', '.join(urls)}; "
           f"~{args.input_tokens} token in, {args.output_tokens} out; concorrenze {concs}")
-    warm = make_prompts(2, args.input_tokens, args.seed + 999)
-    await asyncio.gather(*(one(client, args.model, p, 16, extra) for p in warm))
+    warm = make_prompts(2 * len(clients), args.input_tokens, args.seed + 999)
+    await asyncio.gather(*(one(clients[i % len(clients)], args.model, p, 16, extra)
+                           for i, p in enumerate(warm)))
 
     rows = []
     out = Path(args.out)
     for c in concs:
         n = args.requests or max(16, 4 * c)
         prompts = make_prompts(n, args.input_tokens, args.seed + c)
-        r = await level(client, args.model, prompts, c, args.output_tokens, extra)
+        r = await level(clients, args.model, prompts, c, args.output_tokens, extra)
         r.update({
             "tag": args.tag, "model": args.model, "backend": backend,
-            "server_host": ep.get("host"), "client_host": socket.gethostname(),
+            "server_host": ep.get("host"), "replicas": len(clients),
+            "client_host": socket.gethostname(),
             "gpu": args.gpu, "input_tokens": args.input_tokens,
             "output_tokens": args.output_tokens, "ignore_eos": not args.allow_eos,
             "time": datetime.now().isoformat(timespec="seconds"),

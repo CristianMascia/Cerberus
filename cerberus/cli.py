@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import urllib.request
 from pathlib import Path
 
 from .config import ConfigError, load_config
@@ -52,9 +51,9 @@ def cmd_validate(args):
     needs = placement.compute_needs(cfg)
     placements, n_nodes = placement.plan(needs, cfg.gpus_per_node, cfg.vram_gib)
     for p in placements:
-        print(f"  {p.spec.label}: {p.spec.alloc_mode} num_gpus={p.num_gpus} "
+        print(f"  {p.instance}: {p.spec.alloc_mode} num_gpus={p.num_gpus} "
               f"~{p.footprint_gib:.1f} GiB  ctx={p.spec.ctx_size}")
-    total_gpus = sum(n.num_gpus for n in needs)
+    total_gpus = sum(n.num_gpus * n.spec.replicas for n in needs)
     print(f"[cerberus] needs {total_gpus} GPU(s) -> {n_nodes} node(s) "
           f"at {cfg.gpus_per_node} GPU/node.")
     print(f"[cerberus] allocate e.g.: salloc --nodes={n_nodes} --ntasks-per-node=1 "
@@ -83,14 +82,12 @@ def cmd_status(args):
         sys.exit(f"[cerberus] no endpoint map at {ep}")
     data = json.loads(ep.read_text())
     print(f"[cerberus] job {data.get('job_id')} — {ep}")
+    from .deploy import _health_ok
     for label, m in data["models"].items():
-        ok = False
-        try:
-            with urllib.request.urlopen(f"http://{m['host']}:{m['port']}/health", timeout=3) as r:
-                ok = b'"ok"' in r.read()
-        except Exception:
-            ok = False
-        print(f"  {label:20s} {m['base_url']:40s} {'UP' if ok else 'DOWN'}")
+        for i, r in enumerate(m.get("replicas") or [m]):
+            ok = _health_ok(r["host"], r["port"])
+            name = label if i == 0 else ""
+            print(f"  {name:20s} {r['base_url']:40s} {'UP' if ok else 'DOWN'}")
 
 
 def cmd_down(args):

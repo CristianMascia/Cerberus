@@ -86,7 +86,7 @@ def plan_row(p: placement.Placed, hf_cache: str) -> str:
 
     columns: node, label, model_container, device, ctx, parallel, kv, reasoning,
              reasoning_format, reasoning_budget, backend, num_gpus,
-             gpu_memory_utilization, reasoning_parser
+             gpu_memory_utilization, reasoning_parser, instance
     Empty values are written as "-": `read` with a tab IFS merges empty fields.
     """
     s = p.spec
@@ -102,7 +102,7 @@ def plan_row(p: placement.Placed, hf_cache: str) -> str:
         p.node_idx, s.label, _container_path(host_path, hf_cache), p.device_arg,
         s.ctx_size, s.parallel, s.kv_cache_type, s.reasoning, s.reasoning_format,
         s.reasoning_budget, s.backend, p.num_gpus, s.gpu_memory_utilization,
-        s.reasoning_parser,
+        s.reasoning_parser, p.instance,
     ]
     return "\t".join("-" if c is None or c == "" else str(c) for c in cols)
 
@@ -150,7 +150,7 @@ def start(config: Config, project_dir: Path, token: str | None = None,
                                          max_nodes=len(nodes))
     print(f"[cerberus] plan uses {n_used}/{len(nodes)} node(s):")
     for p in placements:
-        print(f"  {p.spec.label}: node{p.node_idx} ({nodes[p.node_idx]}) "
+        print(f"  {p.instance}: node{p.node_idx} ({nodes[p.node_idx]}) "
               f"dev={p.device_arg} ctx={p.spec.ctx_size} (~{p.footprint_gib:.1f} GiB)")
 
     # 3. runtime dir + plan file (shared Lustre so all nodes read it).
@@ -246,6 +246,8 @@ def up(config: Config, project_dir: Path, token: str | None = None) -> Path:
     print(f"[cerberus] ready — {len(dep.endpoints)} model(s). endpoints: {ep_path}")
     for label, m in dep.endpoints.items():
         print(f"  {label}: {m['base_url']}  (reasoning={m['reasoning']})")
+        for r in m["replicas"][1:]:
+            print(f"  {'':{len(label)}}  {r['base_url']}  (replica)")
 
     # 7. block, keeping servers up, until interrupted
     print("[cerberus] serving. Press Ctrl-C to stop.")
@@ -259,10 +261,12 @@ def up(config: Config, project_dir: Path, token: str | None = None) -> Path:
 
 
 def _await_ready(placements, nodes, parts: Path, timeout: int, logdir: Path) -> dict:
-    """Poll endpoints.parts until every model reports a port and passes /health."""
-    want = {p.spec.label for p in placements}
-    reasoning_of = {p.spec.label: p.spec.reasoning for p in placements}
-    backend_of = {p.spec.label: p.spec.backend for p in placements}
+    """Poll endpoints.parts until every server reports a port and passes /health.
+
+    Returns the endpoints.json map: one entry per label, with the first replica in
+    base_url/host/port (what older clients read) and every copy in `replicas`.
+    """
+    want = {p.instance for p in placements}
     reported: dict[str, tuple[str, int]] = {}
     waited = 0
     while True:
@@ -272,15 +276,15 @@ def _await_ready(placements, nodes, parts: Path, timeout: int, logdir: Path) -> 
                 reported[f[0]] = (f[1], int(f[2]))
         healthy = {lbl: hp for lbl, hp in reported.items() if _health_ok(*hp)}
         if want <= set(healthy):
-            return {
-                lbl: {
-                    "base_url": f"http://{healthy[lbl][0]}:{healthy[lbl][1]}/v1",
-                    "host": healthy[lbl][0], "port": healthy[lbl][1],
-                    "reasoning": reasoning_of[lbl] != "off",
-                    "backend": backend_of[lbl],
-                }
-                for lbl in want
-            }
+            out: dict = {}
+            for p in placements:  # sorted by label order, then replica
+                host, port = healthy[p.instance]
+                rep = {"base_url": f"http://{host}:{port}/v1", "host": host, "port": port}
+                if p.spec.label not in out:
+                    out[p.spec.label] = {**rep, "reasoning": p.spec.reasoning != "off",
+                                         "backend": p.spec.backend, "replicas": []}
+                out[p.spec.label]["replicas"].append(rep)
+            return out
         time.sleep(3)
         waited += 3
         if waited >= timeout:

@@ -62,6 +62,7 @@ class ModelSpec:
     revision: Optional[str] = None  # vllm: HF branch/tag/commit (default: main)
     gpu_memory_utilization: float = VLLM_DEFAULT_GPU_MEMORY_UTILIZATION  # vllm
     reasoning_parser: Optional[str] = None  # vllm --reasoning-parser (e.g. qwen3)
+    replicas: int = 1               # identical servers, each on its own GPU(s)
 
     @property
     def is_vllm(self) -> bool:
@@ -191,6 +192,10 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
     if reasoning_parser is not None and not isinstance(reasoning_parser, str):
         raise ConfigError(f"{where}: reasoning_parser must be a string")
 
+    replicas = t.get("replicas", 1)
+    if not isinstance(replicas, int) or isinstance(replicas, bool) or replicas < 1:
+        raise ConfigError(f"{where}: replicas must be an integer >= 1")
+
     num_gpus = t.get("num_gpus")
     if alloc_mode == "MANUAL":
         if num_gpus is None:
@@ -207,7 +212,7 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
         kv_cache_type=kv, reasoning=reasoning, reasoning_format=reasoning_format,
         reasoning_budget=reasoning_budget, num_gpus=num_gpus, backend=backend,
         revision=revision, gpu_memory_utilization=float(gmu),
-        reasoning_parser=reasoning_parser,
+        reasoning_parser=reasoning_parser, replicas=replicas,
     )
 
 

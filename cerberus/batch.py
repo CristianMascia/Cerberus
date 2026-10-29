@@ -417,7 +417,7 @@ def _is_transient(exc: BaseException) -> bool:
 
 async def _process(client, units: list[tuple[str, int]], requests: dict, cfg: Config,
                    shard: int, out_fh, max_retries: int, timeout: float) -> tuple[int, int]:
-    sems = {m.label: asyncio.Semaphore(m.parallel) for m in cfg.models}
+    sems = {m.label: asyncio.Semaphore(m.parallel * m.replicas) for m in cfg.models}
     done = errors = 0
     total = len(units)
 

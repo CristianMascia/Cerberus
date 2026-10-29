@@ -10,6 +10,9 @@ touch the filesystem or network. The endpoint map is loaded lazily on first use;
 off-cluster (no map) `is_available()` returns False and calls raise
 `CerberusUnavailable`.
 
+Replicas: a model with `replicas = N` has N identical servers; the client sends
+requests to them in turn (round-robin), so callers still just use the label.
+
 Reasoning: models served with `--reasoning-format deepseek` expose their thinking
 in `message.reasoning_content`; the client returns a clean `content` and the trace
 separately in `reasoning`. A `<think>...</think>` fallback covers other cases.
@@ -26,6 +29,7 @@ Example
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import os
 import re
@@ -81,8 +85,9 @@ class CerberusClient:
         self._explicit = endpoints_path
         self._project_dir = project_dir
         self._map: Optional[dict] = None
-        self._sdk_clients: dict[str, Any] = {}
+        self._sdk_clients: dict[tuple, Any] = {}
         self._async_sdk_clients: dict[tuple, Any] = {}
+        self._rr: dict[str, Any] = {}  # label -> itertools.count, for round-robin
 
     # --- endpoint map (lazy) ------------------------------------------------ #
     def _map_path(self) -> Path:
@@ -121,6 +126,16 @@ class CerberusClient:
             raise KeyError(f"unknown model label '{label}'; have {list(models)}")
         return models[label]
 
+    def base_urls(self, label: str) -> list[str]:
+        """Every server of `label` (one per replica; endpoints.json without
+        `replicas`, from older versions, has just base_url)."""
+        ep = self.endpoint(label)
+        return [r["base_url"] for r in ep.get("replicas") or []] or [ep["base_url"]]
+
+    def _next_replica(self, label: str) -> int:
+        n = len(self.base_urls(label))
+        return next(self._rr.setdefault(label, itertools.count())) % n
+
     def _adapt_body(self, label: str, extra_body: dict) -> dict:
         """Translate llama.cpp-only sampling names for vLLM endpoints."""
         if self.endpoint(label).get("backend") == "vllm" and "repeat_penalty" in extra_body:
@@ -130,19 +145,20 @@ class CerberusClient:
 
     # --- OpenAI SDK per model ---------------------------------------------- #
     def _sdk(self, label: str):
-        if label not in self._sdk_clients:
+        key = (label, self._next_replica(label))
+        if key not in self._sdk_clients:
             try:
                 from openai import OpenAI
             except ModuleNotFoundError as exc:  # pragma: no cover
                 raise RuntimeError(
                     "the 'openai' package is required (pip install openai)"
                 ) from exc
-            self._sdk_clients[label] = OpenAI(
-                base_url=self.endpoint(label)["base_url"], api_key="cerberus-no-auth"
+            self._sdk_clients[key] = OpenAI(
+                base_url=self.base_urls(label)[key[1]], api_key="cerberus-no-auth"
             )
-        return self._sdk_clients[label]
+        return self._sdk_clients[key]
 
-    def _new_async_sdk(self, label: str):
+    def _new_async_sdk(self, label: str, replica: int = 0):
         try:
             from openai import AsyncOpenAI
         except ModuleNotFoundError as exc:  # pragma: no cover
@@ -150,15 +166,16 @@ class CerberusClient:
                 "the 'openai' package is required (pip install openai)"
             ) from exc
         return AsyncOpenAI(
-            base_url=self.endpoint(label)["base_url"], api_key="cerberus-no-auth"
+            base_url=self.base_urls(label)[replica], api_key="cerberus-no-auth"
         )
 
     def _async_sdk(self, label: str):
         # Cached per event loop: an AsyncOpenAI client's httpx pool is bound to the
         # loop it first runs on, so reusing it after asyncio.run() returns fails.
-        key = (label, id(asyncio.get_running_loop()))
+        replica = self._next_replica(label)
+        key = (label, replica, id(asyncio.get_running_loop()))
         if key not in self._async_sdk_clients:
-            self._async_sdk_clients[key] = self._new_async_sdk(label)
+            self._async_sdk_clients[key] = self._new_async_sdk(label, replica)
         return self._async_sdk_clients[key]
 
     # --- inference ---------------------------------------------------------- #
@@ -293,11 +310,14 @@ class CerberusClient:
             )
 
         async def _run() -> list[Response]:
-            # a fresh client per call: each asyncio.run() below is a new event loop
-            async with self._new_async_sdk(label) as client:
+            # fresh clients per call (each asyncio.run() below is a new event loop),
+            # one per replica; request i goes to replica i % N
+            clients = [self._new_async_sdk(label, r)
+                       for r in range(len(self.base_urls(label)))]
+            try:
                 return await asyncio.gather(*[
                     self._achat_one(
-                        client,
+                        clients[i % len(clients)],
                         label,
                         msgs,
                         extra_body=extra_body,
@@ -305,8 +325,11 @@ class CerberusClient:
                         temperature=temperature,
                         extra=extra,
                     )
-                    for msgs in messages
+                    for i, msgs in enumerate(messages)
                 ])
+            finally:
+                for c in clients:
+                    await c.close()
 
         return asyncio.run(_run())
 

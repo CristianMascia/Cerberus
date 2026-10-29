@@ -8,7 +8,9 @@ allocation of `nodes x gpus_per_node` GPUs of `vram_gib` GiB each
   * multi-GPU models (tensor-split) take that many WHOLE GPUs on a SINGLE node
     (tensor-split cannot cross nodes);
   * single-GPU models pack onto GPUs and may SHARE one when their footprints sum
-    to <= vram_gib (first-fit-decreasing).
+    to <= vram_gib (first-fit-decreasing);
+  * a model with `replicas = N` is placed N times, never two copies on the same
+    GPU (a second copy on a busy GPU adds no throughput).
 
 `compute_needs()` (network: reads GGUF headers, or safetensors sizes and
 config.json for vllm models) turns a Config into per-model needs; a vllm model's
@@ -39,6 +41,12 @@ class Placed:
     gpu_indices: list[int]        # logical GPU indices on that node (-> CUDA<i>)
     num_gpus: int
     footprint_gib: float
+    replica: int = 0              # 0..spec.replicas-1
+
+    @property
+    def instance(self) -> str:
+        """Name of this server (logs, endpoints.parts): the label, `label#i` for replicas."""
+        return self.spec.label if self.spec.replicas == 1 else f"{self.spec.label}#{self.replica}"
 
     @property
     def device_arg(self) -> str:
@@ -87,11 +95,14 @@ def plan(needs: list[ModelNeed], gpus_per_node: int, vram_gib: float = VRAM_GIB,
 
     placements: list[Placed] = []
 
+    # One entry per server: (need, replica index).
+    copies = [(n, r) for n in needs for r in range(n.spec.replicas)]
     # Order: multi-GPU first (hardest to place), then single-GPU by footprint desc.
-    multi = sorted([n for n in needs if n.num_gpus > 1],
-                   key=lambda n: n.num_gpus, reverse=True)
-    single = sorted([n for n in needs if n.num_gpus == 1],
-                    key=lambda n: n.footprint_gib, reverse=True)
+    multi = sorted([c for c in copies if c[0].num_gpus > 1],
+                   key=lambda c: c[0].num_gpus, reverse=True)
+    single = sorted([c for c in copies if c[0].num_gpus == 1],
+                    key=lambda c: c[0].footprint_gib, reverse=True)
+    used_by: dict[str, set[tuple[int, int]]] = {}   # label -> (node, gpu) of its copies
 
     def place_multi(need: ModelNeed):
         # need num_gpus GPUs at full capacity on one node
@@ -109,10 +120,11 @@ def plan(needs: list[ModelNeed], gpus_per_node: int, vram_gib: float = VRAM_GIB,
         return k, chosen
 
     def place_single(need: ModelNeed):
-        # first GPU (any node) with enough remaining capacity
+        # first GPU (any node) with enough remaining capacity, not holding another copy
+        taken = used_by.get(need.spec.label, set())
         for k, gpus in enumerate(nodes):
             for i, cap in enumerate(gpus):
-                if cap >= need.footprint_gib:
+                if cap >= need.footprint_gib and (k, i) not in taken:
                     gpus[i] -= need.footprint_gib
                     return k, [i]
         k = add_node()
@@ -124,14 +136,12 @@ def plan(needs: list[ModelNeed], gpus_per_node: int, vram_gib: float = VRAM_GIB,
         nodes[k][0] -= need.footprint_gib
         return k, [0]
 
-    for need in multi:
-        k, gpus = place_multi(need)
-        placements.append(Placed(need.spec, k, gpus, need.num_gpus, need.footprint_gib))
-    for need in single:
-        k, gpus = place_single(need)
-        placements.append(Placed(need.spec, k, gpus, need.num_gpus, need.footprint_gib))
+    for need, r in multi + single:
+        k, gpus = (place_multi if need.num_gpus > 1 else place_single)(need)
+        used_by.setdefault(need.spec.label, set()).update((k, i) for i in gpus)
+        placements.append(Placed(need.spec, k, gpus, need.num_gpus, need.footprint_gib, r))
 
     # Keep output in the original models.conf order for readability.
     order = {n.spec.label: idx for idx, n in enumerate(needs)}
-    placements.sort(key=lambda p: order[p.spec.label])
+    placements.sort(key=lambda p: (order[p.spec.label], p.replica))
     return placements, len(nodes)

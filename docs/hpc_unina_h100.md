@@ -202,3 +202,20 @@ Differenze rispetto a llama.cpp:
   assegnate: i pesi devono essere già in cache (`cerberus download`).
 
 Demo con i due backend insieme: `test/demo/unina_h100_vllm/`.
+
+### Repliche e tensor parallel
+
+Per avere più throughput da un modello che entra in una GPU, usa
+`replicas = 2` (vale per entrambi i backend): Cerberus avvia due server identici,
+ognuno sulla sua GPU (mai due copie sulla stessa), e il client alterna le
+richieste tra i due (round-robin). Il label resta uno solo; in `endpoints.json`
+le copie sono in `replicas`, e la batch API usa `parallel x replicas` richieste
+in contemporanea. Con più copie che GPU per nodo, servono più nodi.
+
+Il tensor parallel (un modello su 2 GPU) su questi nodi **non funziona**: le due
+H100 sono su socket diversi e senza NVLink, e anche se `nvidia-smi topo -p2p r`
+dice OK, i trasferimenti diretti tra GPU si bloccano (vLLM resta appeso al primo
+all-reduce, anche con `NCCL_P2P_DISABLE=1` e `--disable-custom-all-reduce`).
+Quindi i modelli vLLM devono entrare in una H100 (per un 70B, una versione FP8).
+llama.cpp divide il modello per layer e non usa questi all-reduce, quindi
+dovrebbe funzionare anche su 2 GPU (non ancora provato su questi nodi).

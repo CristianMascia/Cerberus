@@ -3,7 +3,7 @@
 # Cerberus — per-node launcher (run via srun from deploy.py on each node).
 #
 # Reads the plan, starts this node's servers (llama-server, or `vllm serve` from
-# the vLLM .sif for backend=vllm; each on a free port, bound to 0.0.0.0), reports "label<TAB>host<TAB>port" back
+# the vLLM .sif for backend=vllm; each on a free port, bound to 0.0.0.0), reports "instance<TAB>host<TAB>port" back
 # to the shared endpoints file, then waits (keeping the srun step, and thus the
 # servers, alive) until the step is killed.
 #
@@ -103,22 +103,23 @@ start_vllm() {
                  --max-model-len "$ctx" --max-num-seqs "$parallel" )
     [ "$kv" = fp8 ] && args+=( --kv-cache-dtype fp8 )
     [ -n "$rparser" ] && args+=( --reasoning-parser "$rparser" )
-    log "start '$label' (vllm) port $port gpus $gpus tp $tp max-model-len $ctx"
+    log "start '$inst' (vllm) port $port gpus $gpus tp $tp max-model-len $ctx"
     setsid env "${ENVP}HF_HOME=/hf" "${ENVP}HF_HUB_OFFLINE=1" \
         "${ENVP}CUDA_VISIBLE_DEVICES=$gpus" "${ENVP}OMP_NUM_THREADS=$THREADS" \
         "${ENVP}PYTHONNOUSERSITE=1" "${ENVP}VLLM_NO_USAGE_STATS=1" \
         "$SINGULARITY" exec --nv --cleanenv \
         --bind "$HF_CACHE":/hf \
         "$VLLM_IMAGE" "${args[@]}" \
-        > "$LOGDIR/$label.log" 2>&1 &
+        > "$LOGDIR/$inst.log" 2>&1 &
 }
 
 started=0
-while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget backend tp gmu rparser; do
+while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget backend tp gmu rparser inst; do
     [ "$node" = "$NODE_IDX" ] || continue
     # deploy.py writes "-" for empty columns (a tab IFS would merge empty fields)
     [ "$rbudget" = - ] && rbudget=""
     [ "${rparser:--}" = - ] && rparser=""
+    inst="${inst:-$label}"   # server name: the label, or label#i for a replica
 
     port="$(free_port)" || { log "no free port for $label"; continue; }
 
@@ -127,7 +128,7 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
             || { log "ERROR: CERBERUS_VLLM_IMAGE '$VLLM_IMAGE' not found"; exit 1; }
         start_vllm
         PIDS+=("$!")
-        printf '%s\t%s\t%s\t%s\n' "$label" "$HOST" "$port" "$reasoning" >> "$PARTS"
+        printf '%s\t%s\t%s\t%s\n' "$inst" "$HOST" "$port" "$reasoning" >> "$PARTS"
         started=$((started + 1))
         continue
     fi
@@ -141,24 +142,24 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
           -t "$THREADS" --threads-http "$THREADS_HTTP" )
     [ -n "$rbudget" ] && srv+=( --reasoning-budget "$rbudget" )
 
-    log "start '$label' port $port device $device ctx $ctx"
+    log "start '$inst' port $port device $device ctx $ctx"
     if [ -n "$IMAGE" ]; then
         setsid "$SINGULARITY" exec --nv \
             --bind "$HF_CACHE":/hf \
             "$IMAGE" llama-server "${srv[@]}" \
-            > "$LOGDIR/$label.log" 2>&1 &
+            > "$LOGDIR/$inst.log" 2>&1 &
     else
         setsid "$SINGULARITY" exec --nv \
             --bind "$BIND_DIR":"$BIND_DIR" \
             --bind "$HF_CACHE":/hf \
             --env LD_LIBRARY_PATH="$BIN" \
             "$SANDBOX" "$BIN/llama-server" "${srv[@]}" \
-            > "$LOGDIR/$label.log" 2>&1 &
+            > "$LOGDIR/$inst.log" 2>&1 &
     fi
     PIDS+=("$!")
 
     # report the endpoint back to the master (atomic append)
-    printf '%s\t%s\t%s\t%s\n' "$label" "$HOST" "$port" "$reasoning" >> "$PARTS"
+    printf '%s\t%s\t%s\t%s\n' "$inst" "$HOST" "$port" "$reasoning" >> "$PARTS"
     started=$((started + 1))
 done < "$PLAN"
 

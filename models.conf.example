@@ -57,6 +57,8 @@ max_input_tokens  = 4096
 max_output_tokens = 512
 parallel          = 4
 reasoning         = "off"
+# replicas        = 2                            # optional: N identical servers, each on
+                                                 # its own GPU(s); the client round-robins
 
 # vLLM: backend = "vllm" serves the safetensors of hf_repo with `vllm serve`
 # (needs CERBERUS_VLLM_IMAGE, the vLLM .sif). The model takes WHOLE GPUs;
