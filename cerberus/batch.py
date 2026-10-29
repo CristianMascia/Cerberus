@@ -40,7 +40,7 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _replace
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -184,8 +184,7 @@ def check_against_config(requests: list[BatchRequest], cfg: Config) -> list[str]
 def subset_config(cfg: Config, labels) -> Config:
     """The config restricted to the models the batch uses (others are not started)."""
     keep = set(labels)
-    return Config(gpus_per_node=cfg.gpus_per_node, path=cfg.path, batch=cfg.batch,
-                  models=[m for m in cfg.models if m.label in keep])
+    return _replace(cfg, models=[m for m in cfg.models if m.label in keep])
 
 
 # --------------------------------------------------------------------------- #
@@ -267,7 +266,7 @@ def prepare(cfg: Config, input_path: str | Path, batch_dir: Path, *,
         from . import placement
         print("[cerberus] computing GPU/VRAM needs (reads GGUF headers over HTTP)...")
         need_objs = placement.compute_needs(sub, token=token)
-        placements, n_nodes = placement.plan(need_objs, sub.gpus_per_node)
+        placements, n_nodes = placement.plan(need_objs, sub.gpus_per_node, sub.vram_gib)
         needs = [{"label": n.spec.label, "num_gpus": n.num_gpus,
                   "footprint_gib": n.footprint_gib} for n in need_objs]
         for p in placements:

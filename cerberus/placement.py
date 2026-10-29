@@ -2,12 +2,13 @@
 Cerberus — automatic node + GPU placement.
 
 Given each model's GPU count and VRAM footprint, pack the models onto an
-allocation of `nodes x gpus_per_node` V100s (32 GiB each):
+allocation of `nodes x gpus_per_node` GPUs of `vram_gib` GiB each
+([allocation] vram_gib; 32 GiB = IBiSCo's V100s by default):
 
   * multi-GPU models (tensor-split) take that many WHOLE GPUs on a SINGLE node
     (tensor-split cannot cross nodes);
   * single-GPU models pack onto GPUs and may SHARE one when their footprints sum
-    to <= 32 GiB (first-fit-decreasing).
+    to <= vram_gib (first-fit-decreasing).
 
 `compute_needs()` (network: reads GGUF headers) turns a Config into per-model
 needs; `plan()` is pure and does the packing so it can be tested offline.
@@ -17,10 +18,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import Config, ModelSpec
+from .config import DEFAULT_VRAM_GIB, Config, ModelSpec
 from . import vram
 
-VRAM_GIB = 32.0  # per V100-SXM2-32GB
+VRAM_GIB = DEFAULT_VRAM_GIB  # kept for callers that import it
 
 
 @dataclass
@@ -47,9 +48,14 @@ class PlacementError(Exception):
     pass
 
 
-def compute_needs(config: Config, vram_gib: float = VRAM_GIB,
+def compute_needs(config: Config, vram_gib: float | None = None,
                   token: str | None = None) -> list[ModelNeed]:
-    """Resolve each model's GPU count + footprint (reads GGUF headers over HTTP)."""
+    """Resolve each model's GPU count + footprint (reads GGUF headers over HTTP).
+
+    `vram_gib` defaults to the config's [allocation] vram_gib.
+    """
+    if vram_gib is None:
+        vram_gib = config.vram_gib
     needs = []
     for m in config.models:
         n_gpus, est = vram.required_gpus(m, config.gpus_per_node, vram_gib, token)

@@ -76,6 +76,17 @@ class TestConfig(unittest.TestCase):
         with self.assertRaises(ConfigError):
             self._load(VALID.replace('gguf_file = "a.gguf"\n', ""))
 
+    def test_vram_gib_default_and_override(self):
+        self.assertEqual(self._load(VALID).vram_gib, 32.0)   # V100 di IBiSCo
+        cfg = self._load(VALID.replace("gpus_per_node = 3", "gpus_per_node = 3\nvram_gib = 92"))
+        self.assertEqual(cfg.vram_gib, 92.0)
+
+    def test_bad_vram_gib(self):
+        for bad in ("0", "-1", '"94"', "true"):
+            with self.assertRaises(ConfigError):
+                self._load(VALID.replace("gpus_per_node = 3",
+                                         f"gpus_per_node = 3\nvram_gib = {bad}"))
+
 
 if __name__ == "__main__":
     unittest.main()

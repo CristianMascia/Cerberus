@@ -45,6 +45,7 @@ def _env(name: str, default: str) -> str:
 def _settings() -> dict:
     home = os.path.expanduser("~")
     return {
+        "image": _env("CERBERUS_IMAGE", ""),  # .sif with llama-server inside (wins)
         "sandbox": _env("CERBERUS_SANDBOX", f"{home}/tools/cuda-build"),
         "bin": _env("CERBERUS_BIN", f"{home}/tools/llama.cpp-master/build/bin"),
         "bind": _env("CERBERUS_BIND", f"{home}/tools"),
@@ -112,7 +113,8 @@ def start(config: Config, project_dir: Path, token: str | None = None,
     if needs is None:
         print("[cerberus] computing VRAM needs and placement...")
         needs = placement.compute_needs(config, token=token)
-    placements, n_used = placement.plan(needs, config.gpus_per_node, max_nodes=len(nodes))
+    placements, n_used = placement.plan(needs, config.gpus_per_node, config.vram_gib,
+                                         max_nodes=len(nodes))
     print(f"[cerberus] plan uses {n_used}/{len(nodes)} node(s):")
     for p in placements:
         print(f"  {p.spec.label}: node{p.node_idx} ({nodes[p.node_idx]}) "
@@ -146,6 +148,7 @@ def start(config: Config, project_dir: Path, token: str | None = None,
     # export settings for node_launch (srun propagates the environment)
     child_env = dict(os.environ)
     child_env.update({
+        "CERBERUS_IMAGE": st["image"],
         "CERBERUS_SANDBOX": st["sandbox"], "CERBERUS_BIN": st["bin"],
         "CERBERUS_BIND": st["bind"], "HF_CACHE": st["hf_cache"],
         "CERBERUS_NGL": st["ngl"], "CERBERUS_THREADS": st["threads"],

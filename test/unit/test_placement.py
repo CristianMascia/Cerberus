@@ -46,6 +46,17 @@ class TestPlacement(unittest.TestCase):
         with self.assertRaises(PlacementError):
             plan([need("huge", 1, 50)], gpus_per_node=3, max_nodes=1)
 
+    def test_bigger_gpus_change_packing(self):
+        # su H100 (~92 GiB) un 40 GiB sta su una GPU e due 40 GiB la condividono,
+        # dove sulle V100 (32 GiB) il singolo 40 GiB non ci starebbe
+        with self.assertRaises(PlacementError):
+            plan([need("big", 1, 40)], gpus_per_node=2, max_nodes=1)
+        pl, n = plan([need("a", 1, 40), need("b", 1, 40), need("c", 1, 40)],
+                     gpus_per_node=2, vram_gib=92.0)
+        self.assertEqual(n, 1)
+        self.assertEqual({p.spec.label: p.gpu_indices for p in pl},
+                         {"a": [0], "b": [0], "c": [1]})
+
 
 if __name__ == "__main__":
     unittest.main()

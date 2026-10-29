@@ -17,6 +17,11 @@ NODE_IDX="${1:?usage: node_launch.sh <node_idx> <plan.tsv> <endpoints.parts>}"
 PLAN="${2:?missing plan.tsv}"
 PARTS="${3:?missing endpoints.parts}"
 
+# Two ways to run llama-server:
+#   CERBERUS_IMAGE set  -> a self-contained .sif with llama-server inside
+#                          (cerberus/containers/llamacpp_local.def, e.g. on H100);
+#   otherwise           -> CUDA sandbox + llama.cpp binaries on the host (IBiSCo).
+IMAGE="${CERBERUS_IMAGE:-}"
 SANDBOX="${CERBERUS_SANDBOX:-$HOME/tools/cuda-build}"
 BIN="${CERBERUS_BIN:-$HOME/tools/llama.cpp-master/build/bin}"
 BIND_DIR="${CERBERUS_BIND:-$HOME/tools}"
@@ -34,6 +39,7 @@ log() { echo "[node $NODE_IDX @ $HOST] $*"; }
 
 SINGULARITY="$(command -v singularity 2>/dev/null || command -v apptainer 2>/dev/null || true)"
 [ -n "$SINGULARITY" ] || { log "ERROR: singularity/apptainer not found on this node"; exit 1; }
+[ -z "$IMAGE" ] || [ -f "$IMAGE" ] || { log "ERROR: CERBERUS_IMAGE '$IMAGE' not found"; exit 1; }
 
 PIDS=()
 cleanup() {
@@ -76,12 +82,19 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
     [ -n "$rbudget" ] && srv+=( --reasoning-budget "$rbudget" )
 
     log "start '$label' port $port device $device ctx $ctx"
-    "$SINGULARITY" exec --nv \
-        --bind "$BIND_DIR":"$BIND_DIR" \
-        --bind "$HF_CACHE":/hf \
-        --env LD_LIBRARY_PATH="$BIN" \
-        "$SANDBOX" "$BIN/llama-server" "${srv[@]}" \
-        > "$LOGDIR/$label.log" 2>&1 &
+    if [ -n "$IMAGE" ]; then
+        "$SINGULARITY" exec --nv \
+            --bind "$HF_CACHE":/hf \
+            "$IMAGE" llama-server "${srv[@]}" \
+            > "$LOGDIR/$label.log" 2>&1 &
+    else
+        "$SINGULARITY" exec --nv \
+            --bind "$BIND_DIR":"$BIND_DIR" \
+            --bind "$HF_CACHE":/hf \
+            --env LD_LIBRARY_PATH="$BIN" \
+            "$SANDBOX" "$BIN/llama-server" "${srv[@]}" \
+            > "$LOGDIR/$label.log" 2>&1 &
+    fi
     PIDS+=("$!")
 
     # report the endpoint back to the master (atomic append)

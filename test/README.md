@@ -21,6 +21,7 @@ server, interrogazione via client):
 
 - `ibisco/` — singolo nodo (un modello grande auto-split su 2 GPU + un piccolo);
 - `ibisco_multinode/` — due nodi (due modelli grandi auto-distribuiti);
+- `unina_h100/` — HPC UniNA, un nodo 2x H100 (il 70B su una sola GPU);
 - `local/` — variante locale con immagine `.sif` (indipendente dal tool);
 - `batch_local/` — batch API in locale, senza SLURM (`run_demo.sh`), con
   `demo/batch_check.py` che verifica i risultati.

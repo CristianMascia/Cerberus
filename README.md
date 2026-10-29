@@ -12,6 +12,10 @@ compatibile con OpenAI.
 
 Cerberus è pensato per essere **semplice da usare**: `clona → configura → lancia`.
 
+Gira anche sull'**HPC UniNA** (partizione `ingnormal`, 2x H100 NVL da 94 GB per
+nodo, Apptainer): stesso codice, con `vram_gib = 92` nel `models.conf` e il
+profilo `profiles/unina-h100.env`. Vedi [docs/hpc_unina_h100.md](docs/hpc_unina_h100.md).
+
 ## Avvio rapido
 
 ```bash

@@ -12,8 +12,10 @@
 
 # --------------------------------------------------------------------------- #
 [allocation]
-gpus_per_node = 3          # GPUs available per node (32 GB V100 each). Cerberus
-                           # auto-assigns each model to a node+GPU(s) within this budget.
+gpus_per_node = 3          # GPUs available per node. Cerberus auto-assigns each
+                           # model to a node+GPU(s) within this budget.
+vram_gib      = 32         # usable VRAM of ONE GPU (default 32 = IBiSCo V100;
+                           # 92 for the H100 NVL of the UniNA HPC)
 
 # --------------------------------------------------------------------------- #
 [defaults]                 # applied to every [[model]] unless overridden

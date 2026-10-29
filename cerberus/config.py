@@ -28,6 +28,8 @@ REASONING_MODES = ("on", "off", "auto")
 # (needed for harmony models like gpt-oss, whose channels 'deepseek' does not parse);
 # 'none' leaves the raw output in content for the client to parse.
 REASONING_FORMATS = ("deepseek", "deepseek-legacy", "auto", "none")
+# VRAM of one GPU when [allocation] does not say: V100-SXM2-32GB (IBiSCo).
+DEFAULT_VRAM_GIB = 32.0
 
 
 class ConfigError(Exception):
@@ -81,6 +83,7 @@ class Config:
     models: list[ModelSpec] = field(default_factory=list)
     path: Optional[Path] = None
     batch: BatchSettings = field(default_factory=BatchSettings)
+    vram_gib: float = DEFAULT_VRAM_GIB  # usable VRAM of ONE GPU
 
     def by_label(self, label: str) -> ModelSpec:
         for m in self.models:
@@ -202,6 +205,9 @@ def load_config(path: str | Path) -> Config:
     gpus_per_node = alloc.get("gpus_per_node")
     if not isinstance(gpus_per_node, int) or isinstance(gpus_per_node, bool) or gpus_per_node < 1:
         raise ConfigError("[allocation]: 'gpus_per_node' must be an integer >= 1")
+    vram_gib = alloc.get("vram_gib", DEFAULT_VRAM_GIB)
+    if isinstance(vram_gib, bool) or not isinstance(vram_gib, (int, float)) or vram_gib <= 0:
+        raise ConfigError("[allocation]: 'vram_gib' must be a number > 0 (GiB of one GPU)")
 
     defaults = data.get("defaults", {})
     raw_models = data.get("model", [])
@@ -223,12 +229,14 @@ def load_config(path: str | Path) -> Config:
         models.append(m)
 
     batch = _batch_from_table(data.get("batch", {}))
-    return Config(gpus_per_node=gpus_per_node, models=models, path=path, batch=batch)
+    return Config(gpus_per_node=gpus_per_node, models=models, path=path, batch=batch,
+                  vram_gib=float(vram_gib))
 
 
 if __name__ == "__main__":  # quick manual check: python -m cerberus.config <file>
     cfg = load_config(sys.argv[1])
-    print(f"gpus_per_node={cfg.gpus_per_node}, {len(cfg.models)} models")
+    print(f"gpus_per_node={cfg.gpus_per_node}, vram_gib={cfg.vram_gib:g}, "
+          f"{len(cfg.models)} models")
     for m in cfg.models:
         print(f"  {m.label}: {m.alloc_mode} ctx={m.ctx_size} reasoning={m.reasoning} "
               f"num_gpus={m.num_gpus}")

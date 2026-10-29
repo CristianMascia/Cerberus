@@ -55,7 +55,8 @@ blocco `[[model]]` per ciascun modello.
 
 ```toml
 [allocation]
-gpus_per_node = 3          # GPU per nodo disponibili (V100 da 32 GB)
+gpus_per_node = 3          # GPU per nodo disponibili
+vram_gib      = 32         # VRAM utilizzabile di UNA GPU (default 32 = V100; 92 per H100 NVL)
 
 [defaults]                 # valori applicati a ogni [[model]] se non specificati
 parallel      = 1
@@ -121,16 +122,16 @@ pesi (dimensione su disco del GGUF)
 + margine di sicurezza (5% dei pesi)
 ```
 
-Poi cerca il **numero minimo di GPU** su cui il modello sta entro i 32 GB per GPU
+Poi cerca il **numero minimo di GPU** su cui il modello sta entro i `vram_gib` per GPU (32 GB di default)
 (il contesto CUDA cresce col numero di GPU, quindi è una vera ricerca, non una
 divisione):
 
 ```
 per g = 1, 2, …, gpus_per_node:
-    se VRAM_per_gpu(g) ≤ 32 GiB:  num_gpus = g;  stop
+    se VRAM_per_gpu(g) ≤ vram_gib:  num_gpus = g;  stop
 ```
 
-Esempio: Llama-3.3-70B Q4_K_M (~40 GiB di pesi) non entra in una V100 → `num_gpus = 2`.
+Esempio: Llama-3.3-70B Q4_K_M (~40 GiB di pesi) non entra in una V100 → `num_gpus = 2`; su una H100 (`vram_gib = 92`) → `num_gpus = 1`.
 
 ### MANUAL — deciso da te
 Indichi `num_gpus` e Cerberus distribuisce il modello su quel numero di GPU con
@@ -141,7 +142,7 @@ tensor-split. Utile quando vuoi forzare uno split (o riservare capacità).
 ## 4. Il posizionamento (placement)
 
 Dato, per ogni modello, il numero di GPU e l'impronta di VRAM, Cerberus impacchetta
-i modelli sull'allocazione `nodi × gpus_per_node` (32 GB per GPU):
+i modelli sull'allocazione `nodi × gpus_per_node` (`vram_gib` per GPU, 32 GB di default):
 
 - i modelli **multi-GPU** (tensor-split) occupano quel numero di **GPU intere** su
   **un solo nodo** (lo split non può attraversare i nodi);

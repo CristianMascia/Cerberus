@@ -1,4 +1,4 @@
-"""Cerberus — serving dichiarativo multi-modello di llama.cpp su IBiSCo."""
+"""Cerberus — serving dichiarativo multi-modello di llama.cpp su HPC SLURM (IBiSCo, UniNA H100)."""
 
 from .config import Config, ConfigError, ModelSpec, load_config
 from .client import CerberusClient, CerberusUnavailable, Response
