@@ -46,11 +46,27 @@ Stessa repo (`git pull` su main), stesso GGUF e stessi 32 slot:
 ```bash
 cd ~/Cerberus/test/bench             # dove sta la repo su IBiSCo
 cerberus download -c ibisco.conf
-salloc ... (come per le altre demo IBiSCo, 1 GPU basta)
+salloc --partition=gpus --nodes=1 --ntasks-per-node=1 --gpus-per-node=1 --cpus-per-task=8 --time=02:00:00
 cerberus up -c ibisco.conf &
 BENCH_GPU=V100 python ../../scripts/bench.py run --model qwen3-8b-llamacpp --tag ibisco-llamacpp
 kill %1
 ```
+
+## Come job batch (senza restare collegati)
+
+`test/bench/bench.sbatch` fa tutto da solo: avvia i server, misura ogni modello
+e spegne. Dalla cartella `test/bench`, con l'env `cerberus` attivo:
+
+```bash
+# UniNA
+BENCH_GPU=H100 sbatch -p ingnormal --gpus-per-node=2 --cpus-per-task=10 --mem=200G \
+    --time=03:00:00 bench.sbatch unina.conf qwen3-8b-llamacpp=unina-llamacpp qwen3-8b-vllm=unina-vllm
+# IBiSCo (una sola V100: in coda si aspetta meno)
+BENCH_GPU=V100 sbatch -p gpus --gpus-per-node=1 --cpus-per-task=8 \
+    --time=02:00:00 bench.sbatch ibisco.conf qwen3-8b-llamacpp=ibisco-llamacpp
+```
+
+Avanzamento in `bench-<job>.out`, log dei server in `up-<job>.log`.
 
 ## Confronto
 
