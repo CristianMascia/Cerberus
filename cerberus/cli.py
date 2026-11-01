@@ -11,6 +11,7 @@ Cerberus — command-line interface.
     cerberus batch submit   -i in.jsonl [--shards N] [--repeats R] [--dry-run]
     cerberus batch run      --batch-dir D [--shard I] [--endpoints endpoints.json]
     cerberus batch status   --batch-dir D
+    cerberus batch monitor  D [D ...] [--interval S] [--once]   # live view of batches
     cerberus batch merge    --batch-dir D
 
 Run as `python -m cerberus <cmd>` (or via the `cerberus` console wrapper).
@@ -187,6 +188,16 @@ def cmd_batch_status(args):
     print(f"[cerberus] total: {done}/{tot} done, {err} error(s)")
 
 
+def cmd_batch_monitor(args):
+    from . import batch, monitor
+    try:
+        sys.exit(monitor.monitor(args.batch_dirs, interval=args.interval, once=args.once,
+                                 window=args.window, show_shards=not args.compact,
+                                 keep=args.keep, color=False if args.no_color else None))
+    except batch.BatchError as exc:
+        _batch_fail(exc)
+
+
 def cmd_batch_merge(args):
     from . import batch
     try:
@@ -230,6 +241,20 @@ def _add_batch_parser(sub, add_conf):
     sp = bsub.add_parser("status", help="progress per shard")
     sp.add_argument("--batch-dir", required=True)
     sp.set_defaults(func=cmd_batch_status)
+
+    sp = bsub.add_parser("monitor", help="live view of one or more batches (login node)")
+    sp.add_argument("batch_dirs", nargs="+", metavar="BATCH_DIR",
+                    help="batch dirs; a dir that is not one is searched one level down")
+    sp.add_argument("-n", "--interval", type=float, default=10.0,
+                    help="seconds between refreshes (default 10)")
+    sp.add_argument("--once", action="store_true", help="print once and exit")
+    sp.add_argument("--window", type=float, default=300.0,
+                    help="seconds over which throughput is measured (default 300)")
+    sp.add_argument("--compact", action="store_true", help="one line per batch, no shards")
+    sp.add_argument("--keep", action="store_true",
+                    help="keep refreshing when nothing is running or pending")
+    sp.add_argument("--no-color", action="store_true", help="no ANSI colors")
+    sp.set_defaults(func=cmd_batch_monitor)
 
     sp = bsub.add_parser("merge", help="join the shard results into results.jsonl")
     sp.add_argument("--batch-dir", required=True)

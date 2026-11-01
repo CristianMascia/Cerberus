@@ -556,7 +556,7 @@ def slurm_state(job_id: str) -> dict[int, str]:
                 idx = jid.split("_", 1)[1]
                 if idx.isdigit():
                     states[int(idx)] = state.split()[0] if state else "?"
-    elif shutil.which("squeue"):
+    if not states and shutil.which("squeue"):  # no accounting (e.g. sibisco)
         out = subprocess.run(["squeue", "-j", job_id, "-h", "-r", "-o", "%K|%T"],
                              capture_output=True, text=True)
         for line in out.stdout.splitlines():

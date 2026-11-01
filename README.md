@@ -15,7 +15,7 @@ cerberus download -c models.conf     # pesi nella cache HF (dal login node)
 salloc ...                           # l'allocazione la crei tu
 cerberus up -c models.conf           # avvia i server, scrive endpoints.json, resta in servizio
 cerberus status                      # UP/DOWN di ogni server
-cerberus batch submit|run|status|merge ...   # batch API, vedi docs/batch.md
+cerberus batch submit|run|status|monitor|merge ...   # batch API, vedi docs/batch.md
 ```
 
 ```python
@@ -52,7 +52,7 @@ le GPU rotto), mentre le repliche sì.
 
 | Percorso | Contenuto |
 | --- | --- |
-| `cerberus/` | config, stima VRAM (`estimator`, `vram`, `vllm_backend`), `placement`, `download`, `deploy` + `node_launch.sh`, `client`, `batch`, `cli` |
+| `cerberus/` | config, stima VRAM (`estimator`, `vram`, `vllm_backend`), `placement`, `download`, `deploy` + `node_launch.sh`, `client`, `batch`, `monitor`, `cli` |
 | `profiles/` | variabili d'ambiente per cluster |
 | `scripts/` | `bench.py`, `new-exp.sh` |
 | `test/unit/` | test unitari (niente rete, GPU o SLURM) |

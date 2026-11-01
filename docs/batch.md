@@ -81,10 +81,30 @@ l'errore finisce nella riga del risultato.
 | `cerberus batch submit -i in.jsonl [--model L] [--shards N] [--repeats R] [--batch-dir D] [--dry-run]` | login node | Valida, calcola il placement **una volta**, scrive la cartella del batch e lancia `sbatch --array=0-(N-1)`; con `--dry-run` si ferma prima di `sbatch` |
 | `cerberus batch run --batch-dir D [--shard I] [--endpoints E] [--retry-failed]` | dentro l'allocazione | Il lavoro di un task: avvia i server, elabora lo shard, scrive i risultati, spegne i server. `--shard` di default è `SLURM_ARRAY_TASK_ID` |
 | `cerberus batch status --batch-dir D` | ovunque | Per shard: unità fatte / totali / errori e stato SLURM (`sacct`/`squeue`) |
+| `cerberus batch monitor D [D ...] [-n S] [--once] [--compact]` | login node | Vista live di uno o più batch, vedi sotto |
 | `cerberus batch merge --batch-dir D [-o out.jsonl]` | ovunque | Unisce gli shard in `results.jsonl` nell'ordine dell'input; esce con 1 se mancano unità |
 
 `run --endpoints endpoints.json` salta l'avvio dei server e usa quelli già attivi
 (per esempio quelli di un `cerberus up` in corso): utile per i test e senza SLURM.
+
+### Monitor
+
+```bash
+cerberus batch monitor ~/experiments/psy            # tutti i batch nella cartella
+cerberus batch monitor b_dev_qwen b_val_qwen -n 30  # batch scelti, refresh ogni 30 s
+cerberus batch monitor ~/experiments/psy --compact  # una riga per batch
+```
+
+Per ogni shard mostra lo stato SLURM (da `squeue`, quindi funziona anche senza
+accounting), il nodo o il motivo dell'attesa, il tempo trascorso, unità fatte /
+totali, errori, richieste al minuto, token generati al secondo ed ETA; per ogni
+batch e per l'insieme dà i totali. Una cartella che non è un batch viene cercata
+un livello sotto. Uno shard uscito dalla coda senza finire è classificato dal suo
+log (`TIMEOUT`, `CANCELLED`, `OOM`, `FAILED`, altrimenti `STOPPED`). Il throughput
+è misurato sugli ultimi `--window` secondi (default 300); al primo refresh è
+stimato da fatte / tempo trascorso. I risultati sono letti in modo incrementale.
+Il monitor esce da solo quando non c'è più niente in coda (`--keep` per restare),
+`--once` stampa una volta sola. Serve solo la libreria standard.
 
 ### Cartella del batch
 
