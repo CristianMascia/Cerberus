@@ -243,8 +243,9 @@ def _add_batch_parser(sub, add_conf):
     sp.set_defaults(func=cmd_batch_status)
 
     sp = bsub.add_parser("monitor", help="live view of one or more batches (login node)")
-    sp.add_argument("batch_dirs", nargs="+", metavar="BATCH_DIR",
-                    help="batch dirs; a dir that is not one is searched one level down")
+    sp.add_argument("batch_dirs", nargs="*", default=["."], metavar="BATCH_DIR",
+                    help="batch dirs (default: the current dir); a dir that is not "
+                         "one is searched one level down")
     sp.add_argument("-n", "--interval", type=float, default=10.0,
                     help="seconds between refreshes (default 10)")
     sp.add_argument("--once", action="store_true", help="print once and exit")

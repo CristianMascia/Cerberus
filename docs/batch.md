@@ -83,7 +83,7 @@ l'errore finisce nella riga del risultato.
 | `cerberus batch submit -i in.jsonl [--model L] [--shards N] [--repeats R] [--batch-dir D] [--dry-run]` | login node | Valida, calcola il placement **una volta**, scrive la cartella del batch e lancia `sbatch --array=0-(N-1)`; con `--dry-run` si ferma prima di `sbatch` |
 | `cerberus batch run --batch-dir D [--shard I] [--endpoints E] [--retry-failed]` | dentro l'allocazione | Il lavoro di un task: avvia i server, elabora lo shard, scrive i risultati, spegne i server. `--shard` di default è `SLURM_ARRAY_TASK_ID` |
 | `cerberus batch status --batch-dir D` | ovunque | Per shard: unità fatte / totali / errori e stato SLURM (`sacct`/`squeue`) |
-| `cerberus batch monitor D [D ...] [-n S] [--once] [--compact]` | login node | Vista live di uno o più batch, vedi sotto |
+| `cerberus batch monitor [D ...] [-n S] [--once] [--compact]` | login node | Vista live di uno o più batch, vedi sotto |
 | `cerberus batch merge --batch-dir D [-o out.jsonl] [--like-input]` | ovunque | Unisce gli shard in `results.jsonl` nell'ordine dell'input; con `--like-input` segue la struttura dell'input (vedi Output); esce con 1 se mancano unità |
 
 `run --endpoints endpoints.json` salta l'avvio dei server e usa quelli già attivi
@@ -92,6 +92,7 @@ l'errore finisce nella riga del risultato.
 ### Monitor
 
 ```bash
+cerberus batch monitor                              # i batch nella cartella corrente
 cerberus batch monitor ~/experiments/psy            # tutti i batch nella cartella
 cerberus batch monitor b_dev_qwen b_val_qwen -n 30  # batch scelti, refresh ogni 30 s
 cerberus batch monitor ~/experiments/psy --compact  # una riga per batch
