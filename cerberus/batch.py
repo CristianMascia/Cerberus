@@ -50,7 +50,9 @@ from .config import Config, load_config
 # Request params: standard OpenAI arguments, llama.cpp extras (sent in extra_body)
 # and the reasoning switches (sent as chat_template_kwargs).
 OPENAI_PARAMS = ("temperature", "top_p", "max_tokens", "seed", "stop",
-                 "presence_penalty", "frequency_penalty")
+                 "presence_penalty", "frequency_penalty", "response_format")
+# Structured output: both llama-server and `vllm serve` accept these types.
+RESPONSE_FORMAT_TYPES = ("text", "json_object", "json_schema")
 LLAMACPP_PARAMS = ("top_k", "min_p", "repeat_penalty")
 REASONING_PARAMS = ("reasoning", "reasoning_effort")
 ALLOWED_PARAMS = OPENAI_PARAMS + LLAMACPP_PARAMS + REASONING_PARAMS
@@ -93,6 +95,18 @@ def _normalise(obj: dict, where: str) -> dict:
     if "model" in body:
         out["model"] = body["model"]
     return out
+
+
+def _check_response_format(rf, where: str) -> None:
+    """Shape check of an OpenAI response_format; the schema itself is the server's job."""
+    if not isinstance(rf, dict) or rf.get("type") not in RESPONSE_FORMAT_TYPES:
+        raise BatchError(f"{where}: response_format must be an object with 'type' in "
+                         f"{list(RESPONSE_FORMAT_TYPES)}")
+    if rf["type"] == "json_schema":
+        js = rf.get("json_schema")
+        if not isinstance(js, dict) or not isinstance(js.get("schema"), dict):
+            raise BatchError(f"{where}: response_format json_schema needs "
+                             "'json_schema': {'name': ..., 'schema': {...}}")
 
 
 def load_jsonl(path: str | Path, default_model: Optional[str] = None) -> list[BatchRequest]:
@@ -141,6 +155,8 @@ def load_jsonl(path: str | Path, default_model: Optional[str] = None) -> list[Ba
             if unknown:
                 raise BatchError(f"{where}: unknown params {unknown} "
                                  f"(allowed: {list(ALLOWED_PARAMS)})")
+            if "response_format" in params:
+                _check_response_format(params["response_format"], where)
             requests.append(BatchRequest(cid, model, msgs, params))
     if not requests:
         raise BatchError(f"{path}: no requests found")

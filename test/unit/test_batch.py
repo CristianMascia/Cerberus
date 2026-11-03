@@ -112,6 +112,24 @@ class TestParsing(BatchTestCase):
         self.assertEqual(r.model, "a")
         self.assertEqual(r.params, {"max_tokens": 20, "temperature": 0})
 
+    def test_response_format(self):
+        rf = {"type": "json_schema", "json_schema": {
+            "name": "answer", "schema": {"type": "object",
+                                         "properties": {"label": {"type": "string"}}}}}
+        p = self.write_input([
+            {"custom_id": "n", "model": "a", "messages": _msgs(),
+             "params": {"response_format": rf}},
+            {"custom_id": "o", "method": "POST", "url": "/v1/chat/completions",
+             "body": {"model": "a", "messages": _msgs(),
+                      "response_format": {"type": "json_object"}}},
+        ])
+        native, openai = batch.load_jsonl(p)
+        self.assertEqual(native.params["response_format"], rf)
+        self.assertEqual(openai.params["response_format"], {"type": "json_object"})
+        kw = batch._request_kwargs(native.params, 0, 50)
+        self.assertEqual(kw["response_format"], rf)   # top-level OpenAI argument
+        self.assertNotIn("extra_body", kw)
+
     def test_errors(self):
         cases = [
             [{"custom_id": "1", "model": "a", "messages": _msgs()},
@@ -120,6 +138,12 @@ class TestParsing(BatchTestCase):
             [{"custom_id": "1", "model": "a", "messages": []}],            # no messages
             [{"custom_id": "1", "model": "a", "messages": _msgs(),
               "params": {"temprature": 1}}],                               # unknown param
+            [{"custom_id": "1", "model": "a", "messages": _msgs(),
+              "params": {"response_format": "json"}}],                     # not an object
+            [{"custom_id": "1", "model": "a", "messages": _msgs(),
+              "params": {"response_format": {"type": "xml"}}}],            # unknown type
+            [{"custom_id": "1", "model": "a", "messages": _msgs(),
+              "params": {"response_format": {"type": "json_schema"}}}],    # no schema
         ]
         for rows in cases:
             with self.assertRaises(batch.BatchError):

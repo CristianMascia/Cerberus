@@ -41,7 +41,9 @@ senza modifiche (`max_completion_tokens` diventa `max_tokens`).
 | `top_k`, `min_p`, `repeat_penalty` | `extra_body` | campi specifici di llama.cpp |
 | `reasoning` (bool) | `chat_template_kwargs.enable_thinking` | come `CerberusClient.chat` |
 | `reasoning_effort` | `chat_template_kwargs.reasoning_effort` | per gpt-oss |
+| `response_format` | argomento OpenAI | structured output, llama.cpp e vLLM: `{"type": "json_object"}` oppure `{"type": "json_schema", "json_schema": {"name": ..., "schema": {...}}}` |
 
+Con `response_format` il JSON generato è in `response.content` (come stringa).
 Un parametro non in elenco è un errore di validazione. Se una richiesta ha `seed`,
 la ripetizione `k` usa `seed + k`. Senza `seed` le ripetizioni sono campioni
 indipendenti.
