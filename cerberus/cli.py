@@ -201,7 +201,7 @@ def cmd_batch_monitor(args):
 def cmd_batch_merge(args):
     from . import batch
     try:
-        out, missing = batch.merge(args.batch_dir, args.output)
+        out, missing = batch.merge(args.batch_dir, args.output, like_input=args.like_input)
     except batch.BatchError as exc:
         _batch_fail(exc)
     print(f"[cerberus] wrote {out}")
@@ -259,6 +259,9 @@ def _add_batch_parser(sub, add_conf):
     sp = bsub.add_parser("merge", help="join the shard results into results.jsonl")
     sp.add_argument("--batch-dir", required=True)
     sp.add_argument("-o", "--output", help="output file (default: <batch-dir>/results.jsonl)")
+    sp.add_argument("--like-input", action="store_true",
+                    help="one line per input line in the input's own format "
+                         "(all its fields + response/error; OpenAI Batch output for OpenAI lines)")
     sp.set_defaults(func=cmd_batch_merge)
 
 

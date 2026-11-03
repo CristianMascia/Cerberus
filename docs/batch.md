@@ -84,7 +84,7 @@ l'errore finisce nella riga del risultato.
 | `cerberus batch run --batch-dir D [--shard I] [--endpoints E] [--retry-failed]` | dentro l'allocazione | Il lavoro di un task: avvia i server, elabora lo shard, scrive i risultati, spegne i server. `--shard` di default è `SLURM_ARRAY_TASK_ID` |
 | `cerberus batch status --batch-dir D` | ovunque | Per shard: unità fatte / totali / errori e stato SLURM (`sacct`/`squeue`) |
 | `cerberus batch monitor D [D ...] [-n S] [--once] [--compact]` | login node | Vista live di uno o più batch, vedi sotto |
-| `cerberus batch merge --batch-dir D [-o out.jsonl]` | ovunque | Unisce gli shard in `results.jsonl` nell'ordine dell'input; esce con 1 se mancano unità |
+| `cerberus batch merge --batch-dir D [-o out.jsonl] [--like-input]` | ovunque | Unisce gli shard in `results.jsonl` nell'ordine dell'input; con `--like-input` segue la struttura dell'input (vedi Output); esce con 1 se mancano unità |
 
 `run --endpoints endpoints.json` salta l'avvio dei server e usa quelli già attivi
 (per esempio quelli di un `cerberus up` in corso): utile per i test e senza SLURM.
@@ -113,6 +113,7 @@ Il monitor esce da solo quando non c'è più niente in coda (`--keep` per restar
 ```
 batch_<timestamp>/
   manifest.json            impostazioni, placement, id del job SLURM
+  input.jsonl              copia esatta dell'input (per merge --like-input)
   requests.jsonl           copia normalizzata dell'input
   shards/shard_000.jsonl   le unità (custom_id, repeat) di ogni shard
   results/shard_000.jsonl  una riga per unità completata
@@ -147,6 +148,26 @@ Una riga per (richiesta, ripetizione):
 
 Una richiesta fallita (contesto superato, timeout, errore del server dopo i retry)
 ha `response: null` ed `error: {"type", "message"}`, e non ferma lo shard.
+
+### Output con la struttura dell'input (`merge --like-input`)
+
+```bash
+cerberus batch merge --batch-dir D --like-input -o risultati.jsonl
+```
+
+Una riga per riga dell'input, nello stesso ordine e nello stesso formato:
+
+- **riga nativa**: la riga dell'input con **tutti i suoi campi**, anche quelli che
+  Cerberus ignora (per esempio `conversation_hash` o `meta`), più `response` ed
+  `error` come sopra;
+- **riga OpenAI Batch**: una riga di output OpenAI Batch,
+  `{"id", "custom_id", "response": {"status_code": 200, "request_id", "body": {"object": "chat.completion", "model", "choices": [{"message": {"role", "content", "reasoning"}, "finish_reason"}], "usage"}}, "error"}`;
+  se la richiesta è fallita, `response` è `null` ed `error` è `{"code", "message"}`.
+
+Con `repeats > 1` ogni riga dell'input compare una volta per ripetizione, con il
+campo `repeat` in più. Le unità mancanti sono saltate e segnalate come nel merge
+normale. Per i batch creati prima di `input.jsonl` si legge il file originale
+indicato nel manifest.
 
 ### Ripresa
 

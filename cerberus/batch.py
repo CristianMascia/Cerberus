@@ -12,6 +12,7 @@ servers:
               process one shard, append results line by line, stop the servers
     status    progress per shard (+ SLURM state when available)
     merge     join the shard results into results.jsonl, in input order
+              (--like-input: one line per input line, in the input's own format)
 
 Input, one request per line (`model` and `params` optional):
 
@@ -23,6 +24,7 @@ too and normalised to the form above.
 Batch dir layout:
 
     manifest.json   settings, placement needs, SLURM job id
+    input.jsonl     verbatim copy of the input (for `merge --like-input`)
     requests.jsonl  normalised copy of the input
     shards/shard_XXX.jsonl   the work units (custom_id, repeat) of each shard
     results/shard_XXX.jsonl  one line per completed unit (appended + flushed)
@@ -58,6 +60,8 @@ REASONING_PARAMS = ("reasoning", "reasoning_effort")
 ALLOWED_PARAMS = OPENAI_PARAMS + LLAMACPP_PARAMS + REASONING_PARAMS
 # OpenAI Batch body keys that are not params.
 _BODY_SKIP = ("model", "messages", "stream")
+
+INPUT_COPY = "input.jsonl"  # verbatim copy of the input inside the batch dir
 
 CHARS_PER_TOKEN = 3  # pessimistic estimate used to flag prompts that may not fit
 
@@ -295,6 +299,7 @@ def prepare(cfg: Config, input_path: str | Path, batch_dir: Path, *,
     for d in ("shards", "results", "logs"):
         (batch_dir / d).mkdir(parents=True, exist_ok=True)
 
+    shutil.copyfile(input_path, batch_dir / INPUT_COPY)
     _write_jsonl(batch_dir / "requests.jsonl",
                  [{"custom_id": r.custom_id, "model": r.model, "messages": r.messages,
                    "params": r.params} for r in requests])
@@ -582,26 +587,86 @@ def slurm_state(job_id: str) -> dict[int, str]:
     return states
 
 
-def merge(batch_dir: str | Path, out: Optional[str | Path] = None) -> tuple[Path, list]:
+def merge(batch_dir: str | Path, out: Optional[str | Path] = None, *,
+          like_input: bool = False) -> tuple[Path, list]:
     """Join the shard results into results.jsonl, ordered as the input then by repeat.
+
+    like_input=True writes the input's own structure instead of Cerberus rows: a
+    native line comes back with all its fields plus `response` and `error`; an
+    OpenAI Batch line becomes an OpenAI Batch output line. With repeats > 1 every
+    line also carries `repeat`.
 
     Returns (path, missing units). If a unit appears more than once (a resumed
     shard), the last line wins.
     """
     batch_dir = Path(batch_dir)
     manifest = load_manifest(batch_dir)
-    order = [r["custom_id"] for r in _read_jsonl(batch_dir / "requests.jsonl")]
     results = {}
     for i in range(manifest["shards"]):
         for r in _read_jsonl(batch_dir / "results" / _shard_name(i)):
             results[(r["custom_id"], r["repeat"])] = r
+    repeats = manifest["repeats"]
+    if like_input:
+        lines = _read_jsonl(_input_copy(batch_dir, manifest))
+    else:
+        lines = _read_jsonl(batch_dir / "requests.jsonl")
     rows, missing = [], []
-    for cid in order:
-        for k in range(manifest["repeats"]):
-            if (cid, k) in results:
-                rows.append(results[(cid, k)])
-            else:
+    for line in lines:
+        cid = line["custom_id"]
+        for k in range(repeats):
+            r = results.get((cid, k))
+            if r is None:
                 missing.append((cid, k))
+            elif like_input:
+                rows.append(_like_input_row(line, r, repeats))
+            else:
+                rows.append(r)
     out_path = Path(out) if out else batch_dir / "results.jsonl"
     _write_jsonl(out_path, rows)
     return out_path, missing
+
+
+def _input_copy(batch_dir: Path, manifest: dict) -> Path:
+    """The verbatim input: the copy in the batch dir, else the original file."""
+    copy = batch_dir / INPUT_COPY
+    if copy.is_file():
+        return copy
+    orig = manifest.get("input")
+    if orig and Path(orig).is_file():  # batch dirs made before input.jsonl existed
+        return Path(orig)
+    raise BatchError(f"no copy of the input in {batch_dir} and the original "
+                     f"({orig}) is gone: --like-input needs it")
+
+
+def _like_input_row(line: dict, r: dict, repeats: int) -> dict:
+    """One result in the structure of its input line."""
+    if "body" not in line:  # native: the input line + response/error
+        row = dict(line)
+        if repeats > 1:
+            row["repeat"] = r["repeat"]
+        row["response"] = r.get("response")
+        row["error"] = r.get("error")
+        return row
+    # OpenAI Batch output format
+    cid, k = r["custom_id"], r["repeat"]
+    row = {"id": f"cerberus-{cid}-{k}", "custom_id": cid}
+    if repeats > 1:
+        row["repeat"] = k
+    resp, err = r.get("response"), r.get("error")
+    if resp is None:
+        row["response"] = None
+        row["error"] = {"code": (err or {}).get("type"), "message": (err or {}).get("message")}
+        return row
+    usage = dict(resp.get("usage") or {})
+    if "prompt_tokens" in usage and "completion_tokens" in usage:
+        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+    message = {"role": "assistant", "content": resp.get("content")}
+    if resp.get("reasoning") is not None:
+        message["reasoning"] = resp["reasoning"]
+    row["response"] = {"status_code": 200, "request_id": row["id"], "body": {
+        "object": "chat.completion", "model": r.get("model"),
+        "choices": [{"index": 0, "message": message,
+                     "finish_reason": resp.get("finish_reason")}],
+        "usage": usage}}
+    row["error"] = None
+    return row

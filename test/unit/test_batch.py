@@ -233,6 +233,47 @@ class TestRunAndMerge(BatchTestCase):
         self.assertEqual(res[2]["response"]["content"], "b:y")
         self.assertEqual({r["shard"] for r in res}, {0, 1})
 
+    def test_merge_like_input(self):
+        rows = [
+            {"custom_id": "z", "model": "a", "messages": _msgs("z"), "meta": {"hash": "h1"}},
+            {"custom_id": "boom", "model": "a", "messages": _msgs("boom")},
+            {"custom_id": "o", "method": "POST", "url": "/v1/chat/completions",
+             "body": {"model": "b", "messages": _msgs("o")}},
+        ]
+        bd, manifest = self.prepare(rows, repeats=1)
+        self.assertTrue((bd / batch.INPUT_COPY).is_file())
+        self.run_all(bd, manifest)
+        out, missing = batch.merge(bd, bd / "like.jsonl", like_input=True)
+        self.assertEqual(missing, [])
+        z, boom, o = [json.loads(l) for l in out.read_text().splitlines()]
+        # native: the input line untouched + response/error, no repeat with repeats=1
+        self.assertEqual({k: z[k] for k in rows[0]}, rows[0])
+        self.assertNotIn("repeat", z)
+        self.assertEqual(z["response"]["content"], "a:z")
+        self.assertIsNone(z["error"])
+        self.assertIsNone(boom["response"])
+        self.assertEqual(boom["error"]["message"], "bad request")
+        # OpenAI Batch: OpenAI output line
+        self.assertEqual(o["custom_id"], "o")
+        body = o["response"]["body"]
+        self.assertEqual(o["response"]["status_code"], 200)
+        self.assertEqual(body["choices"][0]["message"]["content"], "b:o")
+        self.assertEqual(body["usage"]["total_tokens"], 8)
+        self.assertIsNone(o["error"])
+
+    def test_merge_like_input_repeats_and_old_dirs(self):
+        rows = [{"custom_id": c, "model": "a", "messages": _msgs(c)} for c in ("y", "x")]
+        bd, manifest = self.prepare(rows, repeats=2)
+        self.run_all(bd, manifest)
+        (bd / batch.INPUT_COPY).unlink()           # batch dir made before the copy existed
+        out, _ = batch.merge(bd, like_input=True)  # falls back to manifest["input"]
+        res = [json.loads(l) for l in out.read_text().splitlines()]
+        self.assertEqual([(r["custom_id"], r["repeat"]) for r in res],
+                         [("y", 0), ("y", 1), ("x", 0), ("x", 1)])
+        Path(manifest["input"]).unlink()
+        with self.assertRaises(batch.BatchError):
+            batch.merge(bd, like_input=True)
+
     def test_resume_and_retry_failed(self):
         rows = [{"custom_id": "ok", "model": "a", "messages": _msgs("ok")},
                 {"custom_id": "bad", "model": "a", "messages": _msgs("boom")}]
