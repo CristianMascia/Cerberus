@@ -99,6 +99,27 @@ class TestMonitor(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("Nothing running or pending.", out.getvalue())
 
+    def test_job_id_without_manifest(self):
+        # submit --dry-run + manual sbatch: no job_id in the manifest
+        pend = make_batch(self.root, "pend", 1, 2, job_id=None)
+        run = make_batch(self.root, "run", 2, 2, job_id=None)
+        (run / "logs" / "shard_0_300.out").write_text("")
+        (run / "logs" / "shard_1_300.out").write_text("")
+        add_results(run, 0, ["0-0"])
+        queue = {"300": {0: monitor.TaskInfo("RUNNING", "1:00", "gpu02", 60.0),
+                         1: monitor.TaskInfo("RUNNING", "1:00", "gpu03", 60.0)},
+                 "400": {0: monitor.TaskInfo("PENDING", "0:00", "(Resources)", 0.0)}}
+        out = io.StringIO()
+        monitor.monitor([str(self.root)], once=True, color=False,
+                        squeue=lambda ids: {j: queue.get(j, {}) for j in ids},
+                        find_job=lambda bd: "400" if bd.name == "pend" else None, out=out)
+        text = out.getvalue()
+        self.assertIn("job 300", text)       # from the log names
+        self.assertIn("job 400", text)       # from squeue (job.sbatch path)
+        self.assertIn("RUNNING", text)
+        self.assertIn("PENDING", text)
+        self.assertNotIn("NOT SUBMITTED", text)
+
     def test_parse_elapsed(self):
         self.assertEqual(monitor._parse_elapsed("1-02:03:04"), 93784)
         self.assertEqual(monitor._parse_elapsed("5:07"), 307)

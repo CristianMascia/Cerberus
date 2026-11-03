@@ -106,6 +106,10 @@ un livello sotto. Uno shard uscito dalla coda senza finire è classificato dal s
 log (`TIMEOUT`, `CANCELLED`, `OOM`, `FAILED`, altrimenti `STOPPED`). Il throughput
 è misurato sugli ultimi `--window` secondi (default 300); al primo refresh è
 stimato da fatte / tempo trascorso. I risultati sono letti in modo incrementale.
+Se il manifest non ha l'id del job (per esempio `submit --dry-run` seguito da
+`sbatch job.sbatch` a mano), monitor e status lo ricavano dai nomi dei log
+(`logs/shard_<i>_<job>.out`) o da `squeue`, cercando il job che esegue il
+`job.sbatch` del batch.
 Il monitor esce da solo quando non c'è più niente in coda (`--keep` per restare),
 `--once` stampa una volta sola. Serve solo la libreria standard.
 

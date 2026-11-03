@@ -177,6 +177,9 @@ def cmd_batch_status(args):
     except batch.BatchError as exc:
         _batch_fail(exc)
     job = manifest.get("job_id")
+    if not job:  # sbatch by hand after submit --dry-run
+        from . import monitor
+        job = monitor.job_id_from_logs(bd) or monitor.job_id_from_queue(bd)
     states = batch.slurm_state(job) if job else {}
     print(f"[cerberus] batch {bd} — job {job or '-'}, {manifest['n_units']} unit(s)")
     tot = done = err = 0

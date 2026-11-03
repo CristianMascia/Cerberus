@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -78,6 +79,38 @@ def squeue_tasks(job_ids: list[str]) -> dict[str, dict[int, TaskInfo]]:
         where = node if state in ("RUNNING", "COMPLETING") else f"({reason})"
         out[jid][int(idx)] = TaskInfo(state, elapsed, where, _parse_elapsed(elapsed))
     return out
+
+
+_LOG_JOB_RE = re.compile(r"^shard_\d+_(\d+)\.out$")
+
+
+def job_id_from_logs(batch_dir: Path) -> Optional[str]:
+    """The array job id from the task logs (shard_<i>_<jobid>.out), newest job wins.
+
+    For batches whose manifest has no job_id: `submit --dry-run` followed by a
+    manual `sbatch job.sbatch`.
+    """
+    ids = [int(m.group(1)) for p in (batch_dir / "logs").glob("shard_*_*.out")
+           if (m := _LOG_JOB_RE.match(p.name))]
+    return str(max(ids)) if ids else None
+
+
+def job_id_from_queue(batch_dir: Path) -> Optional[str]:
+    """The id of a queued array job whose script is this batch's job.sbatch."""
+    if not shutil.which("squeue"):
+        return None
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+    cmd = ["squeue", "-h", "-o", "%F|%o"] + (["-u", user] if user else [])
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    script = (batch_dir / "job.sbatch").resolve()
+    for line in res.stdout.splitlines():
+        jid, _, command = line.partition("|")
+        try:
+            if Path(command.strip()).resolve() == script and jid.strip().isdigit():
+                return jid.strip()
+        except OSError:
+            continue
+    return None
 
 
 def has_squeue() -> bool:
@@ -205,12 +238,17 @@ class BatchTracker:
         j = self.manifest.get("job_id")
         return str(j) if j else None
 
-    def reload_manifest(self) -> None:
+    def reload_manifest(self, find_job: Callable[[Path], Optional[str]] = None) -> None:
         if self.job_id is None:  # submitted after the monitor started
             try:
                 self.manifest = load_manifest(self.batch_dir)
             except (BatchError, json.JSONDecodeError):
                 pass
+        if self.job_id is None:  # sbatch by hand: no job_id in the manifest
+            jid = job_id_from_logs(self.batch_dir) or (find_job or job_id_from_queue)(
+                self.batch_dir)
+            if jid:
+                self.manifest["job_id"] = jid
 
 
 def find_batch_dirs(paths: list[str]) -> list[Path]:
@@ -389,6 +427,7 @@ def monitor(paths: list[str], *, interval: float = 10.0, once: bool = False,
             window: float = 300.0, show_shards: bool = True, keep: bool = False,
             color: Optional[bool] = None,
             squeue: Callable[[list[str]], dict] = squeue_tasks,
+            find_job: Optional[Callable[[Path], Optional[str]]] = None,
             out=sys.stdout) -> int:
     trackers = [BatchTracker.open(d) for d in find_batch_dirs(paths)]
     if color is None:
@@ -399,7 +438,7 @@ def monitor(paths: list[str], *, interval: float = 10.0, once: bool = False,
         while True:
             now = time.monotonic()
             for bt in trackers:
-                bt.reload_manifest()
+                bt.reload_manifest(find_job)
                 for st in bt.shards:
                     st.refresh()
                     st.sample(now, window)
