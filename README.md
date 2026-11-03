@@ -38,7 +38,9 @@ rs = c.chat_batch("qwen3-8b", [msgs1, msgs2, ...])     # richieste in parallelo
   le richieste tra le copie.
 
 Su sibisco l'ambiente è in `profiles/unina-h100.env` (immagini `.sif`,
-`HF_HOME`, token). Il tensor parallel di vLLM su 2 GPU lì non funziona (P2P tra
+`HF_HOME`, token). Per lanciare vLLM senza container basta
+`CERBERUS_VLLM_ENV=<env con vllm>` (es. `~/miniforge3/envs/vllm-base`): vince
+sulla `.sif` e vale anche per gli shard della batch API. Il tensor parallel di vLLM su 2 GPU lì non funziona (P2P tra
 le GPU rotto), mentre le repliche sì.
 
 ## Altri strumenti

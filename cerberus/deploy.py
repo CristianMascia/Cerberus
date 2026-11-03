@@ -48,6 +48,8 @@ def _settings() -> dict:
     return {
         "image": _env("CERBERUS_IMAGE", ""),  # .sif with llama-server inside (wins)
         "vllm_image": _env("CERBERUS_VLLM_IMAGE", ""),  # .sif with `vllm serve` inside
+        # env prefix with vllm installed (<env>/bin/vllm): no container; wins over the .sif
+        "vllm_env": _env("CERBERUS_VLLM_ENV", ""),
         "sandbox": _env("CERBERUS_SANDBOX", f"{home}/tools/cuda-build"),
         "bin": _env("CERBERUS_BIN", f"{home}/tools/llama.cpp-master/build/bin"),
         "bind": _env("CERBERUS_BIND", f"{home}/tools"),
@@ -105,6 +107,20 @@ def plan_row(p: placement.Placed, hf_cache: str) -> str:
         s.reasoning_parser, p.instance,
     ]
     return "\t".join("-" if c is None or c == "" else str(c) for c in cols)
+
+
+def vllm_runtime(st: dict) -> str:
+    """How node_launch.sh will run `vllm serve`: a description, or RuntimeError."""
+    env = st.get("vllm_env", "")
+    if env:
+        vllm = Path(env) / "bin" / "vllm"
+        if not os.access(vllm, os.X_OK):
+            raise RuntimeError(f"CERBERUS_VLLM_ENV={env}: no executable {vllm}")
+        return f"env {env}"
+    if st.get("vllm_image"):
+        return f"image {st['vllm_image']}"
+    raise RuntimeError("vllm models need CERBERUS_VLLM_ENV (an env with vllm installed) "
+                       "or CERBERUS_VLLM_IMAGE (the vLLM .sif); see profiles/unina-h100.env")
 
 
 def _health_ok(host: str, port: int) -> bool:
@@ -165,14 +181,14 @@ def start(config: Config, project_dir: Path, token: str | None = None,
     with plan_tsv.open("w") as fh:
         for p in placements:
             fh.write(plan_row(p, st["hf_cache"]) + "\n")
-    if any(p.spec.is_vllm for p in placements) and not st["vllm_image"]:
-        raise RuntimeError("vllm models need CERBERUS_VLLM_IMAGE (the vLLM .sif); "
-                           "see profiles/unina-h100.env")
+    if any(p.spec.is_vllm for p in placements):
+        print(f"[cerberus] vllm from {vllm_runtime(st)}")
 
     # export settings for node_launch (srun propagates the environment)
     child_env = dict(os.environ)
     child_env.update({
         "CERBERUS_IMAGE": st["image"], "CERBERUS_VLLM_IMAGE": st["vllm_image"],
+        "CERBERUS_VLLM_ENV": st["vllm_env"],
         "CERBERUS_SANDBOX": st["sandbox"], "CERBERUS_BIN": st["bin"],
         "CERBERUS_BIND": st["bind"], "HF_CACHE": st["hf_cache"],
         "CERBERUS_NGL": st["ngl"], "CERBERUS_THREADS": st["threads"],

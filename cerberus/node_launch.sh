@@ -2,8 +2,9 @@
 #
 # Cerberus — per-node launcher (run via srun from deploy.py on each node).
 #
-# Reads the plan, starts this node's servers (llama-server, or `vllm serve` from
-# the vLLM .sif for backend=vllm; each on a free port, bound to 0.0.0.0), reports "instance<TAB>host<TAB>port" back
+# Reads the plan, starts this node's servers (llama-server, or `vllm serve` for
+# backend=vllm, from the vLLM .sif or from a Python env on the host; each on a
+# free port, bound to 0.0.0.0), reports "instance<TAB>host<TAB>port" back
 # to the shared endpoints file, then waits (keeping the srun step, and thus the
 # servers, alive) until the step is killed.
 #
@@ -23,6 +24,9 @@ PARTS="${3:?missing endpoints.parts}"
 #   otherwise           -> CUDA sandbox + llama.cpp binaries on the host (IBiSCo).
 IMAGE="${CERBERUS_IMAGE:-}"
 VLLM_IMAGE="${CERBERUS_VLLM_IMAGE:-}"
+# backend=vllm without a container: the prefix of a conda env / venv with vllm
+# installed (<env>/bin/vllm). When set it wins over CERBERUS_VLLM_IMAGE.
+VLLM_ENV="${CERBERUS_VLLM_ENV:-}"
 SANDBOX="${CERBERUS_SANDBOX:-$HOME/tools/cuda-build}"
 BIN="${CERBERUS_BIN:-$HOME/tools/llama.cpp-master/build/bin}"
 BIND_DIR="${CERBERUS_BIND:-$HOME/tools}"
@@ -38,11 +42,15 @@ mkdir -p "$LOGDIR"
 HOST="$(hostname)"
 log() { echo "[node $NODE_IDX @ $HOST] $*"; }
 
+# Singularity/Apptainer is required only by the servers that run in a container
+# (all of llama.cpp, vLLM without CERBERUS_VLLM_ENV): checked when one starts.
 SINGULARITY="$(command -v singularity 2>/dev/null || command -v apptainer 2>/dev/null || true)"
-[ -n "$SINGULARITY" ] || { log "ERROR: singularity/apptainer not found on this node"; exit 1; }
+need_singularity() {
+    [ -n "$SINGULARITY" ] || { log "ERROR: singularity/apptainer not found on this node"; exit 1; }
+}
 [ -z "$IMAGE" ] || [ -f "$IMAGE" ] || { log "ERROR: CERBERUS_IMAGE '$IMAGE' not found"; exit 1; }
 # Env vars that reach the container through --cleanenv: APPTAINERENV_X / SINGULARITYENV_X.
-case "$(basename "$SINGULARITY")" in apptainer) ENVP=APPTAINERENV_ ;; *) ENVP=SINGULARITYENV_ ;; esac
+case "$(basename "${SINGULARITY:-apptainer}")" in apptainer) ENVP=APPTAINERENV_ ;; *) ENVP=SINGULARITYENV_ ;; esac
 
 PIDS=()
 # Each server runs in its own process group (setsid): stopping it signals the whole
@@ -92,24 +100,40 @@ cuda_devices() {
 }
 
 # backend=vllm: `vllm serve` on the cached snapshot, one process per model,
-# tensor-parallel over its GPUs. --cleanenv keeps the host's LD_LIBRARY_PATH,
-# PYTHONPATH and conda variables out of the container (CUDA conflicts).
+# tensor-parallel over its GPUs. In the container, --cleanenv keeps the host's
+# LD_LIBRARY_PATH, PYTHONPATH and conda variables out (CUDA conflicts); on the
+# host (CERBERUS_VLLM_ENV) the same variables are dropped with `env -u`.
 start_vllm() {
     local gpus; gpus="$(cuda_devices "$device")"
-    local args=( vllm serve "$container" --served-model-name "$label"
+    local model="$container"
+    # the plan has container paths (/hf/...): on the host they live under HF_CACHE
+    [ -n "$VLLM_ENV" ] && model="$HF_CACHE/${container#/hf/}"
+    local args=( serve "$model" --served-model-name "$label"
                  --host 0.0.0.0 --port "$port"
                  --tensor-parallel-size "$tp"
                  --gpu-memory-utilization "$gmu"
                  --max-model-len "$ctx" --max-num-seqs "$parallel" )
     [ "$kv" = fp8 ] && args+=( --kv-cache-dtype fp8 )
     [ -n "$rparser" ] && args+=( --reasoning-parser "$rparser" )
+    if [ -n "$VLLM_ENV" ]; then
+        log "start '$inst' (vllm, $VLLM_ENV) port $port gpus $gpus tp $tp max-model-len $ctx"
+        setsid env -u LD_LIBRARY_PATH -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP \
+            -u VIRTUAL_ENV -u CONDA_PREFIX -u CONDA_DEFAULT_ENV \
+            PATH="$VLLM_ENV/bin:$PATH" HF_HOME="$HF_CACHE" HF_HUB_OFFLINE=1 \
+            CUDA_VISIBLE_DEVICES="$gpus" OMP_NUM_THREADS="$THREADS" \
+            PYTHONNOUSERSITE=1 VLLM_NO_USAGE_STATS=1 \
+            "$VLLM_ENV/bin/vllm" "${args[@]}" \
+            > "$LOGDIR/$inst.log" 2>&1 &
+        return
+    fi
+    need_singularity
     log "start '$inst' (vllm) port $port gpus $gpus tp $tp max-model-len $ctx"
     setsid env "${ENVP}HF_HOME=/hf" "${ENVP}HF_HUB_OFFLINE=1" \
         "${ENVP}CUDA_VISIBLE_DEVICES=$gpus" "${ENVP}OMP_NUM_THREADS=$THREADS" \
         "${ENVP}PYTHONNOUSERSITE=1" "${ENVP}VLLM_NO_USAGE_STATS=1" \
         "$SINGULARITY" exec --nv --cleanenv \
         --bind "$HF_CACHE":/hf \
-        "$VLLM_IMAGE" "${args[@]}" \
+        "$VLLM_IMAGE" vllm "${args[@]}" \
         > "$LOGDIR/$inst.log" 2>&1 &
 }
 
@@ -124,8 +148,13 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
     port="$(free_port)" || { log "no free port for $label"; continue; }
 
     if [ "${backend:-llamacpp}" = vllm ]; then
-        [ -n "$VLLM_IMAGE" ] && [ -f "$VLLM_IMAGE" ] \
-            || { log "ERROR: CERBERUS_VLLM_IMAGE '$VLLM_IMAGE' not found"; exit 1; }
+        if [ -n "$VLLM_ENV" ]; then
+            [ -x "$VLLM_ENV/bin/vllm" ] \
+                || { log "ERROR: CERBERUS_VLLM_ENV '$VLLM_ENV' has no bin/vllm"; exit 1; }
+        else
+            [ -n "$VLLM_IMAGE" ] && [ -f "$VLLM_IMAGE" ] \
+                || { log "ERROR: CERBERUS_VLLM_IMAGE '$VLLM_IMAGE' not found"; exit 1; }
+        fi
         start_vllm
         PIDS+=("$!")
         printf '%s\t%s\t%s\t%s\n' "$inst" "$HOST" "$port" "$reasoning" >> "$PARTS"
@@ -142,6 +171,7 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
           -t "$THREADS" --threads-http "$THREADS_HTTP" )
     [ -n "$rbudget" ] && srv+=( --reasoning-budget "$rbudget" )
 
+    need_singularity
     log "start '$inst' port $port device $device ctx $ctx"
     if [ -n "$IMAGE" ]; then
         setsid "$SINGULARITY" exec --nv \

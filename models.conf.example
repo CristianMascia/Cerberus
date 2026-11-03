@@ -61,7 +61,8 @@ reasoning         = "off"
                                                  # its own GPU(s); the client round-robins
 
 # vLLM: backend = "vllm" serves the safetensors of hf_repo with `vllm serve`
-# (needs CERBERUS_VLLM_IMAGE, the vLLM .sif). The model takes WHOLE GPUs;
+# (needs CERBERUS_VLLM_IMAGE, the vLLM .sif, or CERBERUS_VLLM_ENV, an env with
+# vllm installed). The model takes WHOLE GPUs;
 # parallel = concurrent sequences (default 64), in + out = one sequence's length.
 # [[model]]
 # label             = "qwen3-8b"
