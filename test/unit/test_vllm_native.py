@@ -33,7 +33,7 @@ NODE_LAUNCH = Path(__file__).resolve().parents[2] / "cerberus" / "node_launch.sh
 FAKE_VLLM = """#!/usr/bin/env bash
 { echo "ARGS $*"; echo "CVD=$CUDA_VISIBLE_DEVICES"; echo "HF_HOME=$HF_HOME";
   echo "OFFLINE=$HF_HUB_OFFLINE"; echo "PP=${PYTHONPATH-unset}";
-  echo "LDP=${LD_LIBRARY_PATH-unset}"; } > "$(dirname "$0")/../calls.txt"
+  echo "LDP=${LD_LIBRARY_PATH-unset}"; echo "FIS=${VLLM_USE_FLASHINFER_SAMPLER-unset}"; } > "$(dirname "$0")/../calls.txt"
 """
 
 
@@ -118,6 +118,7 @@ class TestNodeLaunch(unittest.TestCase):
             self.assertIn("OFFLINE=1", calls)
             self.assertIn("PP=unset", calls)
             self.assertIn("LDP=unset", calls)
+            self.assertIn("FIS=0", calls)                  # niente JIT con nvcc
             self.assertTrue(parts.read_text().startswith("q#1\t"))
 
 
@@ -154,6 +155,7 @@ class TestNodeLaunch(unittest.TestCase):
             self.assertIn("OFFLINE=1", calls)
             self.assertIn("PP=unset", calls)
             self.assertIn("LDP=unset", calls)
+            self.assertIn("FIS=0", calls)                  # niente JIT con nvcc
             self.assertTrue(parts.read_text().startswith("q#1\t"))
 
 

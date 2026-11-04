@@ -104,6 +104,9 @@ cuda_devices() {
 # tensor-parallel over its GPUs. In the container, --cleanenv keeps the host's
 # LD_LIBRARY_PATH, PYTHONPATH and conda variables out (CUDA conflicts); on the
 # host (vllm_env) the same variables are dropped with `env -u`.
+# Without container the FlashInfer sampler is off by default: it JIT-compiles its
+# kernels with nvcc, which a plain vllm env does not have (export
+# VLLM_USE_FLASHINFER_SAMPLER=1 to turn it back on).
 start_vllm() {
     local gpus; gpus="$(cuda_devices "$device")"
     local model="$container"
@@ -123,6 +126,7 @@ start_vllm() {
             PATH="$VLLM_ENV/bin:$PATH" HF_HOME="$HF_CACHE" HF_HUB_OFFLINE=1 \
             CUDA_VISIBLE_DEVICES="$gpus" OMP_NUM_THREADS="$THREADS" \
             PYTHONNOUSERSITE=1 VLLM_NO_USAGE_STATS=1 \
+            VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}" \
             "$VLLM_ENV/bin/vllm" "${args[@]}" \
             > "$LOGDIR/$inst.log" 2>&1 &
         return
