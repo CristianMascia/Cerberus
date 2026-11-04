@@ -109,6 +109,14 @@ def plan_row(p: placement.Placed, hf_cache: str) -> str:
     return "\t".join("-" if c is None or c == "" else str(c) for c in cols)
 
 
+def missing_from_cache(models) -> list[str]:
+    """Labels of the models whose weights are not (fully) in the HF cache."""
+    hf_cache = _settings()["hf_cache"]
+    return [s.label for s in models
+            if (resolve_local_snapshot(s, hf_cache) if s.is_vllm
+                else resolve_local_gguf(s, hf_cache)) is None]
+
+
 def vllm_runtime(st: dict) -> str:
     """How node_launch.sh will run `vllm serve`: a description, or RuntimeError."""
     env = st.get("vllm_env", "")

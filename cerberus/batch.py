@@ -259,7 +259,7 @@ def default_batch_dir(cfg: Config) -> Path:
 def prepare(cfg: Config, input_path: str | Path, batch_dir: Path, *,
             model: Optional[str] = None, shards: Optional[int] = None,
             repeats: Optional[int] = None, estimate: bool = True,
-            token: Optional[str] = None) -> dict:
+            token: Optional[str] = None, check_cache: bool = False) -> dict:
     """Validate, split and write the batch dir. Returns the manifest."""
     shards = shards if shards is not None else cfg.batch.shards
     repeats = repeats if repeats is not None else cfg.batch.repeats
@@ -271,6 +271,12 @@ def prepare(cfg: Config, input_path: str | Path, batch_dir: Path, *,
         print(f"[cerberus] warning: {w}")
     labels = sorted({r.model for r in requests}, key=[m.label for m in cfg.models].index)
     sub = subset_config(cfg, labels)
+    if check_cache:
+        from .deploy import missing_from_cache
+        missing = missing_from_cache(sub.models)
+        if missing:
+            raise BatchError(f"model(s) {missing} not (fully) in the HF cache — run "
+                             "'cerberus download -c <models.conf>' first")
 
     units = expand_units(requests, repeats)
     split = make_shards(units, shards)

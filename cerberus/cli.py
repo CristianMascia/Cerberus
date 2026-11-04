@@ -139,7 +139,8 @@ def cmd_batch_submit(args):
     batch_dir = Path(args.batch_dir) if args.batch_dir else batch.default_batch_dir(cfg)
     try:
         manifest = batch.prepare(cfg, args.input, batch_dir.resolve(), model=args.model,
-                                 shards=args.shards, repeats=args.repeats)
+                                 shards=args.shards, repeats=args.repeats,
+                                 check_cache=True)
         sbatch = batch.write_sbatch(batch_dir.resolve(), manifest)
         print(f"[cerberus] wrote {sbatch}")
         if args.dry_run:

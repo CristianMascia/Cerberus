@@ -146,6 +146,14 @@ class TestPlan(unittest.TestCase):
             (repo / "refs").mkdir()
             (repo / "refs" / "main").write_text("a" * 40)
             q = vspec(reasoning_parser=None)
+            # solo config.json (lo scarica la stima VRAM): non è un download
+            self.assertIsNone(resolve_local_snapshot(q, hf))
+            (snap / "tokenizer.json").write_text("{}")
+            (snap / "model.safetensors.index.json").write_text(
+                '{"weight_map": {"a": "m-1.safetensors", "b": "m-2.safetensors"}}')
+            (snap / "m-1.safetensors").write_text("")
+            self.assertIsNone(resolve_local_snapshot(q, hf))   # manca uno shard
+            (snap / "m-2.safetensors").write_text("")
             self.assertEqual(resolve_local_snapshot(q, hf), snap)
             self.assertIsNone(resolve_local_snapshot(vspec(revision="v2"), hf))
             row = plan_row(Placed(q, 0, [0, 1], 2, 184.0), hf).split("\t")

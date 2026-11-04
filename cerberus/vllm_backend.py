@@ -14,6 +14,7 @@ KV geometry. `required_gpus_for()` is pure so it can be tested offline.
 from __future__ import annotations
 
 import os
+import json
 import re
 from pathlib import Path
 
@@ -127,4 +128,24 @@ def resolve_local_snapshot(spec: ModelSpec, hf_cache: str | Path) -> Path | None
             return None
         commit = ref.read_text().strip()
     snap = repo / "snapshots" / commit
-    return snap if (snap / "config.json").exists() else None
+    return snap if _snapshot_complete(snap) else None
+
+
+def _snapshot_complete(snap: Path) -> bool:
+    """config.json, the tokenizer and every safetensors shard are there.
+
+    The VRAM estimate fetches config.json alone into the same snapshot dir, so
+    config.json by itself does not mean the model was downloaded."""
+    if not (snap / "config.json").exists():
+        return False
+    if not any((snap / f).exists() for f in ("tokenizer.json", "tokenizer.model",
+                                             "tokenizer_config.json")):
+        return False
+    index = snap / "model.safetensors.index.json"
+    if index.exists():
+        try:
+            shards = set(json.loads(index.read_text())["weight_map"].values())
+        except (ValueError, KeyError, TypeError):
+            return False
+        return all((snap / f).exists() for f in shards)
+    return any(snap.glob("*.safetensors"))
