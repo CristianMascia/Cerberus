@@ -25,8 +25,9 @@ PARTS="${3:?missing endpoints.parts}"
 IMAGE="${CERBERUS_IMAGE:-}"
 VLLM_IMAGE="${CERBERUS_VLLM_IMAGE:-}"
 # backend=vllm without a container: the prefix of a conda env / venv with vllm
-# installed (<env>/bin/vllm). When set it wins over CERBERUS_VLLM_IMAGE.
-VLLM_ENV="${CERBERUS_VLLM_ENV:-}"
+# installed (<env>/bin/vllm). When set it wins over CERBERUS_VLLM_IMAGE; the
+# model's own `vllm_env` (last plan column) wins over both.
+VLLM_ENV_DEFAULT="${CERBERUS_VLLM_ENV:-}"
 SANDBOX="${CERBERUS_SANDBOX:-$HOME/tools/cuda-build}"
 BIN="${CERBERUS_BIN:-$HOME/tools/llama.cpp-master/build/bin}"
 BIND_DIR="${CERBERUS_BIND:-$HOME/tools}"
@@ -43,7 +44,7 @@ HOST="$(hostname)"
 log() { echo "[node $NODE_IDX @ $HOST] $*"; }
 
 # Singularity/Apptainer is required only by the servers that run in a container
-# (all of llama.cpp, vLLM without CERBERUS_VLLM_ENV): checked when one starts.
+# (all of llama.cpp, vLLM without vllm_env / CERBERUS_VLLM_ENV): checked when one starts.
 SINGULARITY="$(command -v singularity 2>/dev/null || command -v apptainer 2>/dev/null || true)"
 need_singularity() {
     [ -n "$SINGULARITY" ] || { log "ERROR: singularity/apptainer not found on this node"; exit 1; }
@@ -102,7 +103,7 @@ cuda_devices() {
 # backend=vllm: `vllm serve` on the cached snapshot, one process per model,
 # tensor-parallel over its GPUs. In the container, --cleanenv keeps the host's
 # LD_LIBRARY_PATH, PYTHONPATH and conda variables out (CUDA conflicts); on the
-# host (CERBERUS_VLLM_ENV) the same variables are dropped with `env -u`.
+# host (vllm_env) the same variables are dropped with `env -u`.
 start_vllm() {
     local gpus; gpus="$(cuda_devices "$device")"
     local model="$container"
@@ -138,19 +139,21 @@ start_vllm() {
 }
 
 started=0
-while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget backend tp gmu rparser inst; do
+while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget backend tp gmu rparser inst venv; do
     [ "$node" = "$NODE_IDX" ] || continue
     # deploy.py writes "-" for empty columns (a tab IFS would merge empty fields)
     [ "$rbudget" = - ] && rbudget=""
     [ "${rparser:--}" = - ] && rparser=""
     inst="${inst:-$label}"   # server name: the label, or label#i for a replica
+    [ "${venv:--}" = - ] && venv=""
+    VLLM_ENV="${venv:-$VLLM_ENV_DEFAULT}"
 
     port="$(free_port)" || { log "no free port for $label"; continue; }
 
     if [ "${backend:-llamacpp}" = vllm ]; then
         if [ -n "$VLLM_ENV" ]; then
             [ -x "$VLLM_ENV/bin/vllm" ] \
-                || { log "ERROR: CERBERUS_VLLM_ENV '$VLLM_ENV' has no bin/vllm"; exit 1; }
+                || { log "ERROR: vllm env '$VLLM_ENV' has no bin/vllm"; exit 1; }
         else
             [ -n "$VLLM_IMAGE" ] && [ -f "$VLLM_IMAGE" ] \
                 || { log "ERROR: CERBERUS_VLLM_IMAGE '$VLLM_IMAGE' not found"; exit 1; }

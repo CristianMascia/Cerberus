@@ -88,7 +88,7 @@ def plan_row(p: placement.Placed, hf_cache: str) -> str:
 
     columns: node, label, model_container, device, ctx, parallel, kv, reasoning,
              reasoning_format, reasoning_budget, backend, num_gpus,
-             gpu_memory_utilization, reasoning_parser, instance
+             gpu_memory_utilization, reasoning_parser, instance, vllm_env
     Empty values are written as "-": `read` with a tab IFS merges empty fields.
     """
     s = p.spec
@@ -104,7 +104,7 @@ def plan_row(p: placement.Placed, hf_cache: str) -> str:
         p.node_idx, s.label, _container_path(host_path, hf_cache), p.device_arg,
         s.ctx_size, s.parallel, s.kv_cache_type, s.reasoning, s.reasoning_format,
         s.reasoning_budget, s.backend, p.num_gpus, s.gpu_memory_utilization,
-        s.reasoning_parser, p.instance,
+        s.reasoning_parser, p.instance, s.vllm_env,
     ]
     return "\t".join("-" if c is None or c == "" else str(c) for c in cols)
 
@@ -117,18 +117,21 @@ def missing_from_cache(models) -> list[str]:
                 else resolve_local_gguf(s, hf_cache)) is None]
 
 
-def vllm_runtime(st: dict) -> str:
-    """How node_launch.sh will run `vllm serve`: a description, or RuntimeError."""
-    env = st.get("vllm_env", "")
+def vllm_runtime(st: dict, spec=None) -> str:
+    """How node_launch.sh will run `vllm serve`: a description, or RuntimeError.
+
+    Order: the model's `vllm_env` (models.conf), CERBERUS_VLLM_ENV, CERBERUS_VLLM_IMAGE."""
+    env = (spec.vllm_env if spec is not None else None) or st.get("vllm_env", "")
     if env:
         vllm = Path(env) / "bin" / "vllm"
         if not os.access(vllm, os.X_OK):
-            raise RuntimeError(f"CERBERUS_VLLM_ENV={env}: no executable {vllm}")
+            src = "vllm_env" if spec is not None and spec.vllm_env else "CERBERUS_VLLM_ENV"
+            raise RuntimeError(f"{src}={env}: no executable {vllm}")
         return f"env {env}"
     if st.get("vllm_image"):
         return f"image {st['vllm_image']}"
-    raise RuntimeError("vllm models need CERBERUS_VLLM_ENV (an env with vllm installed) "
-                       "or CERBERUS_VLLM_IMAGE (the vLLM .sif); see profiles/unina-h100.env")
+    raise RuntimeError("vllm models need vllm_env in models.conf or CERBERUS_VLLM_ENV "
+                       "(an env with vllm installed), or CERBERUS_VLLM_IMAGE (the vLLM .sif); see profiles/unina-h100.env")
 
 
 def _health_ok(host: str, port: int) -> bool:
@@ -189,8 +192,8 @@ def start(config: Config, project_dir: Path, token: str | None = None,
     with plan_tsv.open("w") as fh:
         for p in placements:
             fh.write(plan_row(p, st["hf_cache"]) + "\n")
-    if any(p.spec.is_vllm for p in placements):
-        print(f"[cerberus] vllm from {vllm_runtime(st)}")
+    for lbl, spec in {p.spec.label: p.spec for p in placements if p.spec.is_vllm}.items():
+        print(f"[cerberus] {lbl}: vllm from {vllm_runtime(st, spec)}")
 
     # export settings for node_launch (srun propagates the environment)
     child_env = dict(os.environ)
