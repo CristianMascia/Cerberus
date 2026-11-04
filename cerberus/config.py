@@ -91,6 +91,7 @@ class BatchSettings:
     account: Optional[str] = None
     time: str = "04:00:00"          # time limit of each array task
     cpus_per_task: int = 8
+    mem: Optional[str] = None       # --mem per node (e.g. "200G"); None = partition default
     max_parallel: Optional[int] = None  # max array tasks running at once (--array=...%N)
     max_retries: int = 3            # per-request retries on transient errors
     request_timeout: float = 600.0  # seconds per request
@@ -230,7 +231,7 @@ def _batch_from_table(t: dict) -> BatchSettings:
                 raise ConfigError(f"{where}: '{key}' must be >= "
                                   f"{0 if key == 'max_retries' else 1}")
             setattr(b, key, val)
-    for key in ("partition", "account", "time"):
+    for key in ("partition", "account", "time", "mem"):
         if key in t:
             setattr(b, key, _require(t, key, where, str))
     if "max_parallel" in t:

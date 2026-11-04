@@ -322,6 +322,7 @@ def prepare(cfg: Config, input_path: str | Path, batch_dir: Path, *,
         "slurm": {
             "partition": cfg.batch.partition, "account": cfg.batch.account,
             "time": cfg.batch.time, "cpus_per_task": cfg.batch.cpus_per_task,
+            "mem": cfg.batch.mem,
             "max_parallel": cfg.batch.max_parallel,
         },
         "job_id": None,
@@ -368,6 +369,8 @@ def write_sbatch(batch_dir: Path, manifest: dict, python: Optional[str] = None) 
         lines.append(f"#SBATCH --partition={sl['partition']}")
     if sl.get("account"):
         lines.append(f"#SBATCH --account={sl['account']}")
+    if sl.get("mem"):
+        lines.append(f"#SBATCH --mem={sl['mem']}")
     lines += [
         "",
         "set -euo pipefail",

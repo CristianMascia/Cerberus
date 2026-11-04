@@ -62,6 +62,7 @@ partition       = "gpus"
 # account       = "mio_progetto"
 time            = "04:00:00"   # time limit di ogni task
 cpus_per_task   = 8
+# mem           = "200G"       # --mem per nodo (default: quello della partizione)
 # max_parallel  = 2            # task in esecuzione contemporanea (--array=0-3%2)
 max_retries     = 3            # retry per richiesta su errori transitori
 request_timeout = 600          # secondi per richiesta

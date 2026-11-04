@@ -217,6 +217,9 @@ class TestRunAndMerge(BatchTestCase):
         text = sb.read_text()
         self.assertIn("#SBATCH --array=0-1", text)
         self.assertIn("#SBATCH --time=00:30:00", text)
+        self.assertNotIn("--mem", text)                    # partition default
+        manifest["slurm"]["mem"] = "200G"
+        self.assertIn("#SBATCH --mem=200G", batch.write_sbatch(bd, manifest).read_text())
         with self.assertRaises(batch.BatchError):          # never overwrite a batch
             batch.prepare(self.cfg, self.dir / "in.jsonl", bd, estimate=False)
 
