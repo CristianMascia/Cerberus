@@ -65,6 +65,7 @@ class ModelSpec:
     reasoning_parser: Optional[str] = None  # vllm --reasoning-parser (e.g. qwen3)
     replicas: int = 1               # identical servers, each on its own GPU(s)
     vllm_env: Optional[str] = None  # vllm without container: env prefix with bin/vllm
+    vllm_args: list[str] = field(default_factory=list)  # appended to `vllm serve`
 
     @property
     def is_vllm(self) -> bool:
@@ -142,7 +143,8 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
         gguf_file = ""
     else:
         gguf_file = _require(t, "gguf_file", where, str)
-        for key in ("revision", "gpu_memory_utilization", "reasoning_parser", "vllm_env"):
+        for key in ("revision", "gpu_memory_utilization", "reasoning_parser", "vllm_env",
+                    "vllm_args"):
             if key in t:
                 raise ConfigError(f"{where}: '{key}' is only for backend = \"vllm\"")
 
@@ -201,6 +203,13 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
             raise ConfigError(f"{where}: vllm_env must be a non-empty path")
         vllm_env = os.path.expandvars(os.path.expanduser(vllm_env))
 
+    vllm_args = t.get("vllm_args", defaults.get("vllm_args", [])) if vllm else []
+    if not isinstance(vllm_args, list) or not all(isinstance(a, str) for a in vllm_args):
+        raise ConfigError(f"{where}: vllm_args must be a list of strings")
+    # plan.tsv: tab-separated, one row per server, args joined by \x1f (node_launch.sh)
+    if any(c in a for a in vllm_args for c in "\t\n\r\x1f"):
+        raise ConfigError(f"{where}: vllm_args cannot contain tabs or newlines")
+
     replicas = t.get("replicas", 1)
     if not isinstance(replicas, int) or isinstance(replicas, bool) or replicas < 1:
         raise ConfigError(f"{where}: replicas must be an integer >= 1")
@@ -222,6 +231,7 @@ def _model_from_table(t: dict, defaults: dict, idx: int) -> ModelSpec:
         reasoning_budget=reasoning_budget, num_gpus=num_gpus, backend=backend,
         revision=revision, gpu_memory_utilization=float(gmu),
         reasoning_parser=reasoning_parser, replicas=replicas, vllm_env=vllm_env,
+        vllm_args=list(vllm_args),
     )
 
 

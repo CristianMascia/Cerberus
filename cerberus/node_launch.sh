@@ -119,6 +119,7 @@ start_vllm() {
                  --max-model-len "$ctx" --max-num-seqs "$parallel" )
     [ "$kv" = fp8 ] && args+=( --kv-cache-dtype fp8 )
     [ -n "$rparser" ] && args+=( --reasoning-parser "$rparser" )
+    args+=( "${vextra[@]}" )   # vllm_args from models.conf, verbatim
     if [ -n "$VLLM_ENV" ]; then
         log "start '$inst' (vllm, $VLLM_ENV) port $port gpus $gpus tp $tp max-model-len $ctx"
         setsid env -u LD_LIBRARY_PATH -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP \
@@ -143,7 +144,7 @@ start_vllm() {
 }
 
 started=0
-while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget backend tp gmu rparser inst venv; do
+while IFS=$'\t' read -r node label container device ctx parallel kv reasoning reasoning_format rbudget backend tp gmu rparser inst venv vargs; do
     [ "$node" = "$NODE_IDX" ] || continue
     # deploy.py writes "-" for empty columns (a tab IFS would merge empty fields)
     [ "$rbudget" = - ] && rbudget=""
@@ -151,6 +152,9 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
     inst="${inst:-$label}"   # server name: the label, or label#i for a replica
     [ "${venv:--}" = - ] && venv=""
     VLLM_ENV="${venv:-$VLLM_ENV_DEFAULT}"
+    # vllm_args: one column, each argument followed by \x1f (see deploy.plan_row)
+    vextra=()
+    [ "${vargs:--}" = - ] || IFS=$'\x1f' read -ra vextra <<< "$vargs"
 
     port="$(free_port)" || { log "no free port for $label"; continue; }
 

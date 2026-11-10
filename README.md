@@ -43,6 +43,9 @@ Su sibisco l'ambiente è in `profiles/unina-h100.env` (immagini `.sif`,
 installato: vince sulla `.sif` e vale anche per gli shard della batch API. Senza
 `vllm_env` si usa `CERBERUS_VLLM_ENV` se esportata, altrimenti la `.sif`. Il tensor parallel di vLLM su 2 GPU lì non funziona (P2P tra
 le GPU rotto), mentre le repliche sì.
+Opzioni in più per `vllm serve` vanno in `vllm_args` (nel modello o in
+`[defaults]`, solo con `backend = "vllm"`), una lista di stringhe aggiunte in coda
+così come sono, per esempio `vllm_args = ["--safetensors-load-strategy", "eager"]`.
 
 ## Altri strumenti
 

@@ -88,8 +88,10 @@ def plan_row(p: placement.Placed, hf_cache: str) -> str:
 
     columns: node, label, model_container, device, ctx, parallel, kv, reasoning,
              reasoning_format, reasoning_budget, backend, num_gpus,
-             gpu_memory_utilization, reasoning_parser, instance, vllm_env
+             gpu_memory_utilization, reasoning_parser, instance, vllm_env, vllm_args
     Empty values are written as "-": `read` with a tab IFS merges empty fields.
+    Each of vllm_args is followed by \x1f, so "" and "-" survive too (config.py
+    rejects tabs and newlines in them).
     """
     s = p.spec
     if s.is_vllm:
@@ -105,6 +107,7 @@ def plan_row(p: placement.Placed, hf_cache: str) -> str:
         s.ctx_size, s.parallel, s.kv_cache_type, s.reasoning, s.reasoning_format,
         s.reasoning_budget, s.backend, p.num_gpus, s.gpu_memory_utilization,
         s.reasoning_parser, p.instance, s.vllm_env,
+        "".join(a + "\x1f" for a in s.vllm_args),
     ]
     return "\t".join("-" if c is None or c == "" else str(c) for c in cols)
 

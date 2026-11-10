@@ -74,3 +74,4 @@ reasoning         = "off"
 # max_output_tokens = 4096
 # reasoning_parser  = "qwen3"            # vllm --reasoning-parser
 # kv_cache_type     = "fp8"              # f16 | fp8
+# vllm_args         = ["--safetensors-load-strategy", "eager"]  # appended to vllm serve
