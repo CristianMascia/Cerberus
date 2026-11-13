@@ -16,7 +16,8 @@ della mappa endpoint (`cerberus.client`), espansione dei GGUF spezzati
 (`cerberus.download`), batch API: parsing, split, ripresa e merge (`cerberus.batch`),
 backend vLLM: config, stima delle GPU, riga del piano, health e client (`test_vllm.py`),
 repliche: config, posizionamento, endpoint e round-robin (`test_replicas.py`),
-vLLM nativo senza container: runtime e lancio con un `vllm` finto (`test_vllm_native.py`).
+vLLM nativo senza container: runtime e lancio con un `vllm` finto (`test_vllm_native.py`),
+server che muore all'avvio: uscita immediata con nodo, GPU e riga di errore (`test_startup_crash.py`).
 
 ## `demo/` — test d'integrazione
 Demo eseguibili end-to-end che usano il tool completo (allocazione, avvio dei

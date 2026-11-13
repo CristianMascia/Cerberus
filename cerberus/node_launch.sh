@@ -6,7 +6,10 @@
 # backend=vllm, from the vLLM .sif or from a Python env on the host; each on a
 # free port, bound to 0.0.0.0), reports "instance<TAB>host<TAB>port" back
 # to the shared endpoints file, then waits (keeping the srun step, and thus the
-# servers, alive) until the step is killed.
+# servers, alive) until the step is killed. A server that exits on its own (e.g.
+# vLLM "Engine core initialization failed") is reported to <endpoints>.dead as
+# "instance<TAB>host<TAB>gpus<TAB>exit_code<TAB>backend", so deploy.py stops
+# waiting for it at once instead of at the health timeout.
 #
 # Usage:  node_launch.sh <node_idx> <plan.tsv> <endpoints.parts>
 #
@@ -17,6 +20,7 @@ set -uo pipefail
 NODE_IDX="${1:?usage: node_launch.sh <node_idx> <plan.tsv> <endpoints.parts>}"
 PLAN="${2:?missing plan.tsv}"
 PARTS="${3:?missing endpoints.parts}"
+DEAD="${PARTS%.parts}.dead"
 
 # Two ways to run llama-server:
 #   CERBERUS_IMAGE set  -> a self-contained .sif with llama-server inside
@@ -54,9 +58,15 @@ need_singularity() {
 case "$(basename "${SINGULARITY:-apptainer}")" in apptainer) ENVP=APPTAINERENV_ ;; *) ENVP=SINGULARITYENV_ ;; esac
 
 PIDS=()
+INSTS=() GPUS=() BACKENDS=()   # parallel to PIDS: what each server is, for .dead
+# record the server just started in the background ($!)
+track() { PIDS+=("$!"); INSTS+=("$inst"); GPUS+=("$1"); BACKENDS+=("$2"); }
 # Each server runs in its own process group (setsid): stopping it signals the whole
 # group, so vLLM's worker processes do not outlive the server.
+CLEANED=0
 cleanup() {
+    [ "$CLEANED" = 1 ] && return
+    CLEANED=1
     log "stopping servers..."
     local pid
     for pid in "${PIDS[@]:-}"; do [ -n "$pid" ] && kill -TERM -- "-$pid" 2>/dev/null; done
@@ -69,7 +79,9 @@ cleanup() {
     for pid in "${PIDS[@]:-}"; do [ -n "$pid" ] && kill -KILL -- "-$pid" 2>/dev/null; done
     wait 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# leave right after: the servers stopped here are not crashes for the watch loop
+trap 'cleanup; exit 143' INT TERM
 
 # Find a free TCP port in [PORT_MIN, PORT_MAX] on this node.
 free_port() {
@@ -167,7 +179,7 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
                 || { log "ERROR: CERBERUS_VLLM_IMAGE '$VLLM_IMAGE' not found"; exit 1; }
         fi
         start_vllm
-        PIDS+=("$!")
+        track "$(cuda_devices "$device")" vllm
         printf '%s\t%s\t%s\t%s\n' "$inst" "$HOST" "$port" "$reasoning" >> "$PARTS"
         started=$((started + 1))
         continue
@@ -197,7 +209,7 @@ while IFS=$'\t' read -r node label container device ctx parallel kv reasoning re
             "$SANDBOX" "$BIN/llama-server" "${srv[@]}" \
             > "$LOGDIR/$inst.log" 2>&1 &
     fi
-    PIDS+=("$!")
+    track "$(cuda_devices "$device")" llamacpp
 
     # report the endpoint back to the master (atomic append)
     printf '%s\t%s\t%s\t%s\n' "$inst" "$HOST" "$port" "$reasoning" >> "$PARTS"
@@ -206,4 +218,25 @@ done < "$PLAN"
 
 [ "$started" -gt 0 ] || { log "no models for this node"; exit 0; }
 log "$started server(s) started; waiting."
-wait
+
+# Watch the servers: report each one that exits, keep serving with the others,
+# leave when none is left. (sleep in the background + wait: a TERM from srun
+# runs the trap at once.)
+done_=() failed=0
+while :; do
+    left=0
+    for i in "${!PIDS[@]}"; do
+        [ -n "${done_[$i]:-}" ] && continue
+        if kill -0 "${PIDS[$i]}" 2>/dev/null; then left=$((left + 1)); continue; fi
+        wait "${PIDS[$i]}"; rc=$?
+        done_[$i]=1
+        [ "$rc" = 0 ] || failed=1
+        log "ERROR: '${INSTS[$i]}' (${BACKENDS[$i]}, gpu ${GPUS[$i]}) exited with code $rc; log: $LOGDIR/${INSTS[$i]}.log"
+        printf '%s\t%s\t%s\t%s\t%s\n' "${INSTS[$i]}" "$HOST" "${GPUS[$i]}" "$rc" \
+            "${BACKENDS[$i]}" >> "$DEAD"
+    done
+    [ "$left" -gt 0 ] || break
+    sleep 2 & wait $!
+done
+log "no server left."
+exit "$failed"

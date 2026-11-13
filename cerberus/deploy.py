@@ -20,6 +20,7 @@ master — that runs inside the srun steps on the compute nodes.
 from __future__ import annotations
 
 import json
+import re
 import os
 import signal
 import subprocess
@@ -192,6 +193,7 @@ def start(config: Config, project_dir: Path, token: str | None = None,
     plan_tsv = rundir / "plan.tsv"
     parts = rundir / "endpoints.parts"
     parts.write_text("")  # truncate
+    dead_file(parts).write_text("")  # servers that exited, written by node_launch.sh
     with plan_tsv.open("w") as fh:
         for p in placements:
             fh.write(plan_row(p, st["hf_cache"]) + "\n")
@@ -214,6 +216,7 @@ def start(config: Config, project_dir: Path, token: str | None = None,
     # 4. one srun step per used node
     used_nodes = sorted({p.node_idx for p in placements})
     dep = Deployment(job=job, rundir=rundir, endpoints={})
+    steps: dict[int, subprocess.Popen] = {}
     for idx in used_nodes:
         host = nodes[idx]
         cmd = ["srun", "--nodes=1", "--ntasks=1", f"--nodelist={host}", "--overlap"]
@@ -224,14 +227,15 @@ def start(config: Config, project_dir: Path, token: str | None = None,
         cmd += ["bash", str(NODE_LAUNCH), str(idx), str(plan_tsv), str(parts)]
         print(f"[cerberus] launching node {idx} ({host})")
         srun_log = open(logdir / f"node_{idx}_srun.log", "w")
-        dep.procs.append(subprocess.Popen(cmd, env=child_env, stdout=srun_log, stderr=srun_log))
+        steps[idx] = subprocess.Popen(cmd, env=child_env, stdout=srun_log, stderr=srun_log)
+        dep.procs.append(steps[idx])
 
     # 5. wait for every model to report host:port and become healthy
     timeout = st["health_timeout"]
     if any(p.spec.is_vllm for p in placements):
         timeout = max(timeout, st["health_timeout_vllm"])
     try:
-        dep.endpoints = _await_ready(placements, nodes, parts, timeout, logdir)
+        dep.endpoints = _await_ready(placements, nodes, parts, timeout, logdir, steps)
     except BaseException:
         stop(dep)
         raise
@@ -290,14 +294,73 @@ def up(config: Config, project_dir: Path, token: str | None = None) -> Path:
     return ep_path
 
 
-def _await_ready(placements, nodes, parts: Path, timeout: int, logdir: Path) -> dict:
+def dead_file(parts: Path) -> Path:
+    """Where node_launch.sh reports the servers that exited (see its header)."""
+    return parts.with_suffix(".dead")
+
+
+# Python exception lines ("RuntimeError: ...", "torch.OutOfMemoryError: ...").
+_EXC = re.compile(r"\b[\w.]*(Error|Exception)\b:\s*\S")
+_ERR = re.compile(r"error|failed|out of memory|abort|segmentation fault|killed", re.I)
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# vLLM's prefix: "(EngineCore_DP0 pid=12) ERROR 11-13 10:00:01 [core.py:708] "
+_VLLM_PREFIX = re.compile(r"^(\([^)]*\)\s*)?(ERROR|WARNING|INFO|CRITICAL)\s+\S+\s+\S+\s+\[[^\]]*\]\s*")
+
+
+def error_line(lines: list[str]) -> str:
+    """The line of a server log that best says why it died.
+
+    vLLM prints the root cause (in the engine core's traceback) before the generic
+    "Engine core initialization failed. See root cause above": take the last
+    exception line that is not that one. Then any line that looks like an error
+    (llama.cpp: "error loading model", "failed to initialize CUDA"), then the last
+    non-empty line.
+    """
+    clean = [_VLLM_PREFIX.sub("", _ANSI.sub("", ln)).strip() for ln in lines]
+    clean = [ln for ln in clean if ln]
+    exc = [ln for ln in clean if _EXC.search(ln)]
+    specific = [ln for ln in exc if "see root cause above" not in ln.lower()]
+    for group in (specific, exc, [ln for ln in clean if _ERR.search(ln)], clean):
+        if group:
+            return group[-1][:300]
+    return "(empty log)"
+
+
+def _read_dead(path: Path) -> dict[str, tuple[str, str, str, str]]:
+    """instance -> (host, gpus, exit_code, backend), from node_launch.sh."""
+    out = {}
+    try:
+        text = path.read_text()
+    except OSError:
+        return out
+    for line in text.splitlines():
+        f = line.split("\t")
+        if len(f) >= 5:
+            out[f[0]] = (f[1], f[2], f[3], f[4])
+    return out
+
+
+def _log_tail(log: Path, n: int = 15) -> list[str]:
+    try:
+        return log.read_text(errors="replace").splitlines()[-n:]
+    except OSError:
+        return []
+
+
+def _await_ready(placements, nodes, parts: Path, timeout: int, logdir: Path,
+                 steps: dict | None = None) -> dict:
     """Poll endpoints.parts until every server reports a port and passes /health.
+
+    Fails at once, without waiting for the timeout, when a server exits during
+    startup (reported by node_launch.sh in endpoints.dead) or when the srun step
+    of a node ends before all of its servers are healthy.
 
     Returns the endpoints.json map: one entry per label, with the first replica in
     base_url/host/port (what older clients read) and every copy in `replicas`.
     """
     want = {p.instance for p in placements}
     reported: dict[str, tuple[str, int]] = {}
+    dead_path = dead_file(parts)
     waited = 0
     while True:
         for line in parts.read_text().splitlines():
@@ -315,6 +378,40 @@ def _await_ready(placements, nodes, parts: Path, timeout: int, logdir: Path) -> 
                                          "backend": p.spec.backend, "replicas": []}
                 out[p.spec.label]["replicas"].append(rep)
             return out
+
+        dead = {i: d for i, d in _read_dead(dead_path).items()
+                if i in want and i not in healthy}
+        if dead:
+            msgs = []
+            for inst, (host, gpus, rc, backend) in sorted(dead.items()):
+                log = logdir / f"{inst}.log"
+                tail = _log_tail(log, 200)
+                why = error_line(tail)
+                print(f"[cerberus] ERROR: '{inst}' ({backend}) died during startup on "
+                      f"{host}, GPU {gpus}, exit code {rc}\n  {why}\n  log: {log}",
+                      file=sys.stderr)
+                print(f"--- last log for {inst} ---", file=sys.stderr)
+                print("\n".join(tail[-15:]), file=sys.stderr)
+                msgs.append(f"{inst} on {host} GPU {gpus} (exit {rc}): {why}")
+            raise RuntimeError("server died during startup: " + "; ".join(msgs))
+
+        for idx, pr in (steps or {}).items():
+            if pr.poll() is None:
+                continue
+            # the step may end right after node_launch.sh wrote .dead: read it once more
+            if _read_dead(dead_path).keys() & (want - set(healthy)):
+                break
+            pending = sorted(p.instance for p in placements
+                             if p.node_idx == idx and p.instance not in healthy)
+            if not pending:
+                continue
+            srun_log = logdir / f"node_{idx}_srun.log"
+            print(f"--- {srun_log} ---", file=sys.stderr)
+            print("\n".join(_log_tail(srun_log)), file=sys.stderr)
+            raise RuntimeError(f"node {idx} ({nodes[idx]}): srun step exited with code "
+                               f"{pr.returncode} before {pending} became healthy; "
+                               f"see {srun_log}")
+
         time.sleep(3)
         waited += 3
         if waited >= timeout:
